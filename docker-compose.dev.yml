@@ -1,5 +1,5 @@
 services:
-  backend-dev:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -7,12 +7,48 @@ services:
       - "3000:3000"
     volumes:
       - .:/app
-      - /app/node_modules
+      - backend_modules:/app/node_modules
       - backend_data:/app/data
     environment:
       PORT: 3000
-      NODE_ENV: development
       DB_PATH: /app/data/biblioteca.db
+      NODE_ENV: development
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:3000/api/recursos', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sgb-network
+
+  frontend:
+    build:
+      context: ../sgb-frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../sgb-frontend:/app
+      - frontend_modules:/app/node_modules
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:3000
+    command: npm run dev -- --host 0.0.0.0
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - sgb-network
 
 volumes:
   backend_data:
+  backend_modules:
+  frontend_modules:
+
+networks:
+  sgb-network:
+    name: sgb-network

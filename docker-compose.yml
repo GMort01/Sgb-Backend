@@ -1,5 +1,5 @@
 services:
-  backend-prod:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
@@ -12,6 +12,35 @@ services:
     volumes:
       - backend_data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:3000/api/recursos', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sgb-network
+
+  frontend:
+    build:
+      context: ../sgb-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - sgb-network
 
 volumes:
   backend_data:
+
+networks:
+  sgb-network:
+    name: sgb-network
