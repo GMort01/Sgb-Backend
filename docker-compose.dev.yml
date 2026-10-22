@@ -1,0 +1,18 @@
+services:
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - backend_data:/app/data
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      DB_PATH: /app/data/biblioteca.db
+
+volumes:
+  backend_data:

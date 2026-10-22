@@ -1,127 +1,180 @@
-# 📚 Sistema de Gestión Bibliotecaria (SGB) - Universidad de Madeira
+# Sistema de Gestión Bibliotecaria — SGB
 
-![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)
-![Express](https://img.shields.io/badge/Express-v5.3-blue)
-![SQLite3](https://img.shields.io/badge/SQLite-v3-lightgrey)
-![Architecture](https://img.shields.io/badge/Architecture-N--Tier%20%28Layers%29-orange)
+Sistema de Gestión Bibliotecaria para la Universidad de Madeira, desarrollado con una **arquitectura por capas (N-Tier)** como proyecto académico de la asignatura Desarrollo de Software II.
 
-Este repositorio contiene la **base técnica (esqueleto funcional)** para el Sistema de Gestión Bibliotecaria de la Universidad de Madeira, desarrollado para el **Segundo Momento Evaluativo** de la asignatura Desarrollo de Software II.
+## Información académica
 
----
+- **Estudiante:** Manuel Morales Martínez
+- **Código:** 406384
+- **Institución:** Fundación Universitaria Católica Lumen Gentium — UNICATÓLICA
+- **Asignatura:** Desarrollo de Software II
+- **Evaluación:** Segundo Momento Evaluativo
+- **Docente:** Fabian Stiven Valencia Córdoba
 
-## 🏗️ Arquitectura del Sistema (N-Tier / Por Capas)
+## Descripción del proyecto
 
-Para garantizar la separación de responsabilidades, alta mantenibilidad y bajo acoplamiento, se implementó una **Arquitectura por Capas (N-Tier)** dividida en cuatro componentes principales:
+El backend es una API REST desarrollada con Node.js y Express. Recibe solicitudes HTTP del frontend, coordina las reglas de aplicación y consulta o modifica la información mediante repositorios conectados a SQLite. Los datos se envían al cliente en formato JSON; la API no sirve páginas HTML.
 
-1. **Capa de Presentación / Controladores (`src/controllers`):** Encargada de exponer los endpoints REST API, recibir las peticiones HTTP y devolver las respuestas al cliente.
-2. **Capa de Lógica de Negocio (`src/services`):** Contiene los casos de uso, reglas de negocio y validaciones del dominio.
-3. **Capa de Persistencia / Repositorios (`src/repositories`):** Aísla las consultas SQL y la interacción directa con la base de datos.
-4. **Capa de Base de Datos (`src/config`):** Gestiona la conexión relacional mediante `SQLite3` (`biblioteca.db`).
+El sistema de demostración incluye catálogo de recursos, usuarios de ejemplo, préstamos, reservas, renovaciones, devoluciones, multas y actividades con inscripción.
 
----
+## Arquitectura por capas (N-Tier)
 
-## 🔄 Flujo de Información End-to-End
+La separación por capas delimita responsabilidades, reduce el acoplamiento y facilita el mantenimiento, las pruebas y la evolución del sistema. Se basa en el patrón descrito en *Fundamentals of Software Architecture*, de Mark Richards y Neal Ford: cada capa mantiene una responsabilidad definida y se comunica con las capas adyacentes.
 
-El sistema garantiza un flujo completo de datos desde la interfaz/petición externa hasta la base de datos relacional y de regreso:
+1. **Presentación — frontend y API:** la interfaz React presenta la información. En el backend, Express y los controladores reciben solicitudes HTTP y generan respuestas.
+2. **Lógica de aplicación — servicios:** coordina los casos de uso y las reglas del dominio.
+3. **Persistencia — repositorios:** encapsula las consultas SQL y el acceso a los datos.
+4. **Base de datos — SQLite:** almacena recursos, usuarios, préstamos, reservas, multas y actividades.
 
-```mermaid
-graph TD
-    subgraph Capa_Presentacion ["Capa de Presentación (REST API)"]
-        UI["Cliente HTTP (Postman / Browser)"]
-        Controller["RecursoController (Endpoints HTTP)"]
-    end
+Esta división permite cambiar la interfaz sin trasladar las consultas SQL, y modificar la persistencia sin llevar esa lógica a los controladores.
 
-    subgraph Capa_Logica ["Capa de Lógica de Negocio (Services)"]
-        Service["RecursoService (Reglas de Negocio)"]
-    end
+## Flujo end-to-end: consulta de recursos
 
-    subgraph Capa_Persistencia ["Capa de Persistencia (Repositories)"]
-        Repository["RecursoRepository (Consultas SQL)"]
-    end
+1. El frontend solicita `GET /api/recursos` vía HTTP.
+2. Express dirige la solicitud al controlador de recursos.
+3. El controlador delega la operación a `recursoService`.
+4. El servicio solicita los registros a `recursoRepository`.
+5. El repositorio consulta SQLite.
+6. Los registros regresan del repositorio al servicio y al controlador.
+7. El controlador responde con **`200 OK`** y un JSON estandarizado. La API devuelve datos, no HTML.
 
-    subgraph Base_Datos ["Base de Datos Relacional"]
-        DB[(SQLite3 - biblioteca.db)]
-    end
+Ejemplo de respuesta:
 
-    UI -->|1. PETICIÓN: GET /api/recursos| Controller
-    Controller -->|2. Invoca caso de uso| Service
-    Service -->|3. Consulta datos| Repository
-    Repository -->|4. Ejecuta SQL| DB
-    DB -->|5. Retorna registros| Repository
-    Repository -->|6. Devuelve entidades| Service
-    Service -->|7. Retorna resultado| Controller
-    Controller -->|8. RESPUESTA: JSON 200 OK| UI
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "titulo": "Ejemplo de recurso",
+      "autor": "Autor de ejemplo",
+      "coleccion": "General",
+      "ejemplares": 2,
+      "estado": "Disponible"
+    }
+  ]
+}
 ```
 
----
+## Diagrama de arquitectura
 
-## 📁 Estructura del Proyecto
+[Ver diagrama de arquitectura en Mermaid](https://mermaid.ai/d/16789ce8-6554-427d-917e-ce4389f31fb5)
+
+## Funcionalidades de la demo
+
+- Consultar y registrar recursos bibliográficos.
+- Consultar estudiantes y usuarios; registrar usuarios.
+- Solicitar préstamos; cuando no hay ejemplares, entrar en cola de reserva.
+- Renovar o devolver préstamos; al devolver, asignar el ejemplar a una reserva pendiente cuando corresponde.
+- Consultar y cancelar reservas.
+- Registrar multas y marcarlas como pagadas.
+- Publicar actividades e inscribir usuarios respetando los cupos.
+- Consultar la información desde el portal de estudiante y desde el espacio bibliotecario.
+
+## API disponible
+
+La dirección local del backend es `http://localhost:3000`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/recursos` | Consultar el catálogo |
+| `POST` | `/api/recursos` | Registrar un recurso |
+| `GET` | `/api/usuarios` | Consultar usuarios |
+| `GET` | `/api/usuarios/estudiantes` | Consultar perfiles de estudiante de demostración |
+| `POST` | `/api/usuarios` | Registrar un usuario |
+| `GET` | `/api/prestamos` | Consultar préstamos activos |
+| `GET` | `/api/prestamos/todos` | Consultar todos los préstamos |
+| `POST` | `/api/prestamos` | Solicitar un préstamo o crear una reserva si no hay ejemplares |
+| `PATCH` | `/api/prestamos/:id/renovar` | Renovar un préstamo |
+| `PATCH` | `/api/prestamos/:id/devolver` | Devolver un préstamo |
+| `GET` | `/api/reservas` | Consultar la cola de reservas |
+| `DELETE` | `/api/reservas/:id` | Cancelar una reserva |
+| `GET` | `/api/multas` | Consultar multas |
+| `POST` | `/api/multas` | Registrar una multa |
+| `PATCH` | `/api/multas/:id/pagar` | Marcar una multa como pagada |
+| `GET` | `/api/actividades` | Consultar actividades |
+| `POST` | `/api/actividades` | Crear una actividad |
+| `POST` | `/api/actividades/:id/inscripciones` | Inscribir un usuario en una actividad |
+
+Las respuestas correctas de lectura siguen el formato `{ "success": true, "data": ... }`. En las operaciones de creación el servidor puede responder `201 Created`; las validaciones incorrectas responden con un estado de error y un mensaje JSON.
+
+## Requisitos
+
+- Docker y Docker Compose para ejecutar el sistema completo.
+- Node.js 22 o superior y npm si se ejecutan los servicios directamente en el equipo.
+
+## Ejecución con Docker Compose
+
+El Compose unificado está en la carpeta contenedora `SGB-Universidad-Madeira`, que debe contener las carpetas `sgb-backend` y `sgb-frontend`. Una vez disponibles ambos directorios, desde la carpeta contenedora ejecuta:
+
+```bash
+docker compose up --build
+```
+
+Este único comando construye y levanta ambos servicios:
+
+- **Backend:** `http://localhost:3000`
+- **Frontend:** `http://localhost:5173`
+
+Para detener los contenedores:
+
+```bash
+docker compose down
+```
+
+La base de datos SQLite del Compose unificado se guarda en un volumen de Docker para conservar los datos entre reinicios.
+
+### Archivos Docker del backend
+
+- `Dockerfile`: imagen de producción del backend.
+- `Dockerfile.dev`: imagen de desarrollo del backend.
+- `docker-compose.yml`: ejecución independiente del backend en producción.
+- `docker-compose.dev.yml`: ejecución independiente del backend en desarrollo.
+- `docker-compose.yml` en la carpeta contenedora: configuración unificada de frontend y backend.
+
+El repositorio frontend tiene sus propios `Dockerfile` y `Dockerfile.dev`; el Compose unificado pertenece a la carpeta contenedora, no a cada servicio.
+
+## Ejecución local del backend
+
+Desde la carpeta `sgb-backend`:
+
+```bash
+npm install
+npm run dev
+```
+
+La API quedará disponible en `http://localhost:3000`. Para consultar el catálogo, abre `http://localhost:3000/api/recursos`.
+
+El archivo SQLite se determina con la variable `DB_PATH`. Si no se define, el backend utiliza `biblioteca.db` dentro del proyecto. En Docker Compose se configura en `/app/data/biblioteca.db`.
+
+## Estructura del backend
 
 ```text
-SGB-Universidad-Madeira/
+sgb-backend/
 ├── src/
-│   ├── config/
-│   │   └── database.js           # Conexión e inicialización de SQLite
-│   ├── controllers/
-│   │   └── recursoController.js  # Endpoints y manejo de HTTP
-│   ├── repositories/
-│   │   └── recursoRepository.js  # Capa DAO / Consultas SQL
-│   ├── services/
-│   │   └── recursoService.js     # Lógica de negocio
-│   └── app.js                    # Servidor Express y rutas REST
-├── .gitignore                    # Exclusión de node_modules
-├── package.json                  # Dependencias del proyecto
-└── README.md                     # Documentación de la arquitectura
+│   ├── config/          # Conexión, esquema y datos iniciales de SQLite
+│   ├── controllers/     # Controladores HTTP y respuestas de la API
+│   ├── repositories/    # Consultas SQL y persistencia
+│   ├── services/        # Casos de uso y lógica de aplicación
+│   ├── app.js           # Configuración Express y rutas
+│   └── ...
+├── Dockerfile
+├── Dockerfile.dev
+├── docker-compose.yml
+├── docker-compose.dev.yml
+└── README.md
 ```
 
----
+## Verificación rápida
 
-## 🚀 Instrucciones para Ejecución Local
+Con el backend iniciado, comprueba el endpoint principal:
 
-### Prerrequisitos
+```bash
+curl http://localhost:3000/api/recursos
+```
 
-- Node.js (v18 o superior)
-- npm (incluido con Node.js)
+La primera inicialización de una base vacía agrega datos ficticios de ejemplo y prepara las tablas necesarias. Las migraciones actuales preservan los datos existentes.
 
----
+## Advertencia de seguridad
 
-## Pasos de Instalación
-
-1. Clonar el repositorio:
-
-    ```bash
-    git clone https://github.com/GMort01/SGB-Universidad-Madeira.git
-    ```
-
-2. Entrar en el directorio del proyecto:
-
-    ```bash
-    cd SGB-Universidad-Madeira
-    ```
-
-3. Instalar las dependencias:
-
-    ```bash
-    npm install
-    ```
-
-4. Iniciar el servidor:
-
-    ```bash
-    node src/app.js
-    ```
-
-5. Probar la API desde el navegador o un cliente HTTP como Postman o Thunder Client:
-
-    ```text
-    http://localhost:3000/api/recursos
-    ```
-
-## 👥 Información del Proyecto
-**Estudiante:** Manuel Morales Martínez
-
-**Institución:** Fundación Universitaria Católica Lumen Gentium - UNICATÓLICA
-
-**Curso:** Desarrollo de Software II
-
-**Docente:** Fabian Stiven Valencia Córdoba
+Esta aplicación se preparó para una demostración académica. Algunas operaciones son públicas y no requieren autenticación; los datos son compartidos entre quienes usan la demo. Utiliza únicamente datos ficticios. No expongas el sistema en una red pública ni lo uses para guardar información personal real sin implementar autenticación, autorización y las medidas de seguridad necesarias.

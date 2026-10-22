@@ -1,0 +1,73 @@
+const multaService = require('../services/multaService');
+
+function parseId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+class MultaController {
+    async obtenerTodas(req, res) {
+        try {
+            const multas = await multaService.obtenerTodas();
+            return res.status(200).json({ success: true, data: multas });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    async crear(req, res) {
+        const { usuario, concepto, monto, fecha } = req.body ?? {};
+        const fechaMulta = fecha ?? new Date().toISOString().slice(0, 10);
+        if (
+            typeof usuario !== 'string'
+            || !usuario.trim()
+            || usuario.trim().length > 160
+            || typeof concepto !== 'string'
+            || !concepto.trim()
+            || concepto.trim().length > 240
+            || typeof monto !== 'number'
+            || !Number.isFinite(monto)
+            || monto <= 0
+            || monto > 100000000
+            || typeof fechaMulta !== 'string'
+            || !/^\d{4}-\d{2}-\d{2}$/.test(fechaMulta)
+            || Number.isNaN(Date.parse(`${fechaMulta}T00:00:00Z`))
+        ) {
+            return res.status(400).json({ success: false, message: 'Los datos de la multa no son válidos.' });
+        }
+
+        try {
+            const multa = await multaService.crear({
+                usuario: usuario.trim(),
+                concepto: concepto.trim(),
+                monto: Math.round(monto * 100) / 100,
+                fecha: fechaMulta,
+            });
+            return res.status(201).json({ success: true, data: multa });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    async marcarPagada(req, res) {
+        const id = parseId(req.params.id);
+        if (id === null) {
+            return res.status(400).json({ success: false, message: 'El identificador de la multa no es válido.' });
+        }
+
+        try {
+            const multa = await multaService.marcarPagada(id);
+            if (!multa) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'La multa no existe o ya fue pagada.',
+                });
+            }
+            return res.status(200).json({ success: true, data: multa });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+}
+
+module.exports = new MultaController();
