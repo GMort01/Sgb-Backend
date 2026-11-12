@@ -1,8 +1,8 @@
 const multaRepository = require('../repositories/multaRepository');
 
 class MultaService {
-    obtenerTodas() {
-        return multaRepository.obtenerTodas();
+    obtenerTodas(usuarioId) {
+        return multaRepository.obtenerTodas(usuarioId);
     }
 
     crear(multa) {

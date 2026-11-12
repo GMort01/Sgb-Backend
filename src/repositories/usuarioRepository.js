@@ -1,41 +1,32 @@
-const db = require('../config/database');
+const { all, run } = require('./transaction');
 
 class UsuarioRepository {
     obtenerTodos() {
-        return new Promise((resolve, reject) => {
-            db.all(
-                'SELECT id, identificacion, codigo, nombres, apellidos, correo, rol FROM usuarios ORDER BY apellidos, nombres',
-                [],
-                (error, rows) => {
-                    if (error) reject(error);
-                    else resolve(rows);
-                },
-            );
-        });
+        return all(
+            'SELECT id, identificacion, codigo, nombres, apellidos, correo, rol, plan, semestre FROM usuarios ORDER BY apellidos, nombres',
+        );
     }
 
-    crear(usuario) {
-        return new Promise((resolve, reject) => {
-            db.run(
-                `INSERT INTO usuarios (identificacion, codigo, nombres, apellidos, correo, rol)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [
-                    usuario.identificacion,
-                    usuario.codigo,
-                    usuario.nombres,
-                    usuario.apellidos,
-                    usuario.correo,
-                    usuario.rol,
-                ],
-                function (error) {
-                    if (error) {
-                        reject(error);
-                        return;
-                    }
-                    resolve({ id: this.lastID, ...usuario });
-                },
-            );
-        });
+    async crear(usuario) {
+        const result = await run(
+            `INSERT INTO usuarios
+                (identificacion, codigo, nombres, apellidos, correo, rol, plan, semestre, password_hash)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id`,
+            [
+                usuario.identificacion,
+                usuario.codigo,
+                usuario.nombres,
+                usuario.apellidos,
+                usuario.correo,
+                usuario.rol,
+                usuario.plan || null,
+                usuario.semestre || null,
+                usuario.passwordHash,
+            ],
+        );
+        const { passwordHash, ...perfil } = usuario;
+        return { id: result.rows[0].id, ...perfil };
     }
 }
 

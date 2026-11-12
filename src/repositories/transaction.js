@@ -1,37 +1,57 @@
 const db = require('../config/database');
 
-function execute(method, sql, values = []) {
-    return new Promise((resolve, reject) => {
-        db[method](sql, values, function (error, result) {
-            if (error) {
-                reject(error);
-                return;
-            }
-            resolve(method === 'run' ? this : method === 'get' ? result : result);
-        });
-    });
+function parameterize(sql) {
+    let parameter = 0;
+    return sql.replace(/\?/g, () => `$${++parameter}`);
 }
 
-const run = (sql, values) => execute('run', sql, values);
-const get = (sql, values) => execute('get', sql, values);
-const all = (sql, values) => execute('all', sql, values);
+async function query(client, sql, values = []) {
+    return client.query(parameterize(sql), values);
+}
 
-let pendingTransaction = Promise.resolve();
+async function all(sql, values = []) {
+    const result = await query(db, sql, values);
+    return result.rows;
+}
 
-function transaction(work) {
-    const result = pendingTransaction.then(async () => {
-        await run('BEGIN IMMEDIATE');
+async function get(sql, values = []) {
+    const result = await query(db, sql, values);
+    return result.rows[0] ?? null;
+}
+
+async function run(sql, values = []) {
+    const result = await query(db, sql, values);
+    return { changes: result.rowCount, rows: result.rows };
+}
+
+async function transaction(work) {
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        const transactionQuery = {
+            all: async (sql, values = []) => (await query(client, sql, values)).rows,
+            get: async (sql, values = []) => (await query(client, sql, values)).rows[0] ?? null,
+            run: async (sql, values = []) => {
+                const result = await query(client, sql, values);
+                return { changes: result.rowCount, rows: result.rows };
+            },
+        };
+        const result = await work(transactionQuery);
+        await client.query('COMMIT');
+        return result;
+    } catch (error) {
         try {
-            const result = await work({ run, get, all });
-            await run('COMMIT');
-            return result;
-        } catch (error) {
-            await run('ROLLBACK');
-            throw error;
+            await client.query('ROLLBACK');
+        } catch (rollbackError) {
+            throw new AggregateError(
+                [error, rollbackError],
+                'La transacción falló y también falló su reversión.',
+            );
         }
-    });
-    pendingTransaction = result.then(() => undefined, () => undefined);
-    return result;
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 module.exports = { all, get, run, transaction };

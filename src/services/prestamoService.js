@@ -1,32 +1,36 @@
 const prestamoRepository = require('../repositories/prestamoRepository');
 
 class PrestamoService {
-    obtenerActivos() {
-        return prestamoRepository.obtenerActivos();
+    obtenerActivos(usuarioId) {
+        return prestamoRepository.obtenerActivos(usuarioId);
     }
 
-    obtenerTodos() {
-        return prestamoRepository.obtenerTodos();
+    obtenerTodos(usuarioId) {
+        return prestamoRepository.obtenerTodos(usuarioId);
     }
 
-    obtenerReservas() {
-        return prestamoRepository.obtenerReservas();
+    obtenerReservas(usuarioId) {
+        return prestamoRepository.obtenerReservas(usuarioId);
     }
 
-    renovar(id) {
-        return prestamoRepository.renovar(id);
+    renovar(id, usuarioId) {
+        return prestamoRepository.renovar(id, usuarioId);
     }
 
-    solicitar(usuarioId, recursoId) {
-        return prestamoRepository.solicitar(usuarioId, recursoId);
+    solicitar(usuarioId, recursoId, bibliotecarioId) {
+        return prestamoRepository.solicitar(usuarioId, recursoId, bibliotecarioId);
+    }
+
+    reservar(usuarioId, recursoId) {
+        return prestamoRepository.reservar(usuarioId, recursoId);
     }
 
     cancelarReserva(id, usuarioId) {
         return prestamoRepository.cancelarReserva(id, usuarioId);
     }
 
-    devolver(id) {
-        return prestamoRepository.devolver(id);
+    devolver(id, bibliotecarioId) {
+        return prestamoRepository.devolver(id, bibliotecarioId);
     }
 }
 

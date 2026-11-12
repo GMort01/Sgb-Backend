@@ -4,11 +4,11 @@ class ActividadRepository {
     obtenerTodas(usuarioId) {
         return all(
             `SELECT a.id, a.titulo, a.descripcion, a.fecha, a.hora, a.lugar, a.cupos,
-                COUNT(i.id) AS inscritos,
-                MAX(CASE WHEN i.usuario_id = ? THEN 1 ELSE 0 END) AS inscrito
+                COUNT(i.id)::INTEGER AS inscritos,
+                MAX(CASE WHEN i.usuario_id = ? THEN 1 ELSE 0 END)::INTEGER AS inscrito
              FROM actividades a
              LEFT JOIN inscripciones_actividades i ON i.actividad_id = a.id
-             WHERE a.fecha >= date('now')
+             WHERE a.fecha >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT
              GROUP BY a.id
              ORDER BY a.fecha, a.hora`,
             [usuarioId || 0],
@@ -18,7 +18,8 @@ class ActividadRepository {
     crear(actividad) {
         return run(
             `INSERT INTO actividades (titulo, descripcion, fecha, hora, lugar, cupos)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?)
+             RETURNING id`,
             [
                 actividad.titulo,
                 actividad.descripcion,
@@ -27,13 +28,15 @@ class ActividadRepository {
                 actividad.lugar,
                 actividad.cupos,
             ],
-        ).then((result) => ({ id: result.lastID, ...actividad, inscritos: 0, inscrito: 0 }));
+        ).then((result) => ({ id: result.rows[0].id, ...actividad, inscritos: 0, inscrito: 0 }));
     }
 
     inscribir(actividadId, usuarioId) {
         return transaction(async (query) => {
             const actividad = await query.get(
-                "SELECT id, cupos FROM actividades WHERE id = ? AND fecha >= date('now')",
+                `SELECT id, cupos FROM actividades
+                 WHERE id = ? AND fecha >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT
+                 FOR UPDATE`,
                 [actividadId],
             );
             if (!actividad) {
@@ -57,7 +60,7 @@ class ActividadRepository {
             }
 
             const { inscritos } = await query.get(
-                'SELECT COUNT(*) AS inscritos FROM inscripciones_actividades WHERE actividad_id = ?',
+                'SELECT COUNT(*)::INTEGER AS inscritos FROM inscripciones_actividades WHERE actividad_id = ?',
                 [actividadId],
             );
             if (inscritos >= actividad.cupos) {

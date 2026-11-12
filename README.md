@@ -13,7 +13,7 @@ Sistema de Gestión Bibliotecaria para la Universidad de Madeira, desarrollado c
 
 ## Descripción del proyecto
 
-El backend es una API REST desarrollada con Node.js y Express. Recibe solicitudes HTTP del frontend, coordina las reglas de aplicación y consulta o modifica la información mediante repositorios conectados a SQLite. Los datos se envían al cliente en formato JSON; la API no sirve páginas HTML.
+El backend es una API REST desarrollada con Node.js y Express. Recibe solicitudes HTTP del frontend, coordina las reglas de aplicación y consulta o modifica la información mediante repositorios conectados a PostgreSQL en Supabase. Los datos se envían al cliente en formato JSON; la API no sirve páginas HTML.
 
 El sistema de demostración incluye catálogo de recursos, usuarios de ejemplo, préstamos, reservas, renovaciones, devoluciones, multas y actividades con inscripción.
 
@@ -24,7 +24,7 @@ La separación por capas delimita responsabilidades, reduce el acoplamiento y fa
 1. **Presentación — frontend y API:** la interfaz React presenta la información. En el backend, Express y los controladores reciben solicitudes HTTP y generan respuestas.
 2. **Lógica de aplicación — servicios:** coordina los casos de uso y las reglas del dominio.
 3. **Persistencia — repositorios:** encapsula las consultas SQL y el acceso a los datos.
-4. **Base de datos — SQLite:** almacena recursos, usuarios, préstamos, reservas, multas y actividades.
+4. **Base de datos — Supabase PostgreSQL:** almacena recursos, usuarios, préstamos, reservas, multas y actividades.
 
 Esta división permite cambiar la interfaz sin trasladar las consultas SQL, y modificar la persistencia sin llevar esa lógica a los controladores.
 
@@ -34,7 +34,7 @@ Esta división permite cambiar la interfaz sin trasladar las consultas SQL, y mo
 2. Express dirige la solicitud al controlador de recursos.
 3. El controlador delega la operación a `recursoService`.
 4. El servicio solicita los registros a `recursoRepository`.
-5. El repositorio consulta SQLite.
+5. El repositorio consulta PostgreSQL mediante el pooler de Supabase.
 6. Los registros regresan del repositorio al servicio y al controlador.
 7. El controlador responde con **`200 OK`** y un JSON estandarizado. La API devuelve datos, no HTML.
 
@@ -60,7 +60,7 @@ Ejemplo de respuesta:
 
 [Abrir el editor Mermaid Live](https://mermaid.live/) · [Ver el diagrama compartido](https://mermaid.ai/d/16789ce8-6554-427d-917e-ce4389f31fb5)
 
-El siguiente diagrama documenta la arquitectura implementada: presentación, proxy HTTP, rutas y controladores, servicios, repositorios, transacciones, tablas SQLite y despliegue Docker. Puedes copiar el código al editor Mermaid Live para visualizarlo o exportarlo.
+El siguiente diagrama documenta la arquitectura implementada: presentación, proxy HTTP, rutas y controladores, servicios, repositorios, transacciones, tablas PostgreSQL y despliegue Docker. Puedes copiar el código al editor Mermaid Live para visualizarlo o exportarlo.
 
 ```mermaid
 flowchart LR
@@ -103,7 +103,7 @@ flowchart LR
         EventController --> EventService
     end
 
-    subgraph Persistence["Persistencia - repositorios SQLite"]
+    subgraph Persistence["Persistencia - repositorios PostgreSQL"]
         ResourceRepository["RecursoRepository"]
         UserRepository["UsuarioRepository"]
         LoanRepository["PrestamoRepository"]
@@ -134,8 +134,8 @@ flowchart LR
         EventController -.-> ApiRoutes
     end
 
-    subgraph Data["Base de datos SQLite"]
-        DB[("biblioteca.db")]
+    subgraph Data["Base de datos Supabase PostgreSQL"]
+        DB[("Supabase")]
         Tables["recursos, usuarios, prestamos, reservas, multas, actividades, inscripciones_actividades"]
         DB --> Tables
         ResourceRepository --> DB
@@ -149,10 +149,8 @@ flowchart LR
     subgraph Deployment["Despliegue Docker"]
         FrontendContainer["Contenedor frontend: Vite dev o Nginx produccion"]
         BackendContainer["Contenedor backend: Node.js / Express"]
-        DataVolume["Volumen persistente backend_data"]
         FrontendContainer -->|"red Docker: HTTP backend:3000"| BackendContainer
-        BackendContainer --> DataVolume
-        DataVolume --> DB
+        BackendContainer -->|"TLS: Session Pooler"| DB
     end
 
     ApiRoutes -.->|"respuesta JSON; p. ej. 200 OK"| ClientServices
@@ -162,16 +160,31 @@ flowchart LR
 
 El diagrama representa los componentes y flujos implementados en este proyecto; no pretende enumerar todos los patrones ni contenidos del libro de referencia.
 
-## Funcionalidades de la demo
+## Funcionalidades
 
 - Consultar y registrar recursos bibliográficos.
 - Consultar estudiantes y usuarios; registrar usuarios.
-- Solicitar préstamos; cuando no hay ejemplares, entrar en cola de reserva.
+- Registrar préstamos asociados al usuario y bibliotecario; cuando no hay ejemplares de General o tabletas, entrar en cola de reserva.
 - Renovar o devolver préstamos; al devolver, asignar el ejemplar a una reserva pendiente cuando corresponde.
 - Consultar y cancelar reservas.
 - Registrar multas y marcarlas como pagadas.
 - Publicar actividades e inscribir usuarios respetando los cupos.
-- Consultar la información desde el portal de estudiante y desde el espacio bibliotecario.
+- Iniciar sesión con JWT y proteger las operaciones por rol; los préstamos y reservas se bloquean si hay multas pendientes.
+- Validar los campos y mínimos de inventario de cada colección; la Mapoteca se presta por USB en modo de lectura.
+
+### Reglas de inventario y préstamo
+
+| Colección/tipo | Mínimo de ejemplares | Plazo | Renovaciones | Datos específicos |
+|---|---:|---:|---:|---|
+| General | 5 por registro | 15 días | 5 | ISBN, resumen, autores, publicación, dimensiones y encuadernación |
+| Reserva | 10 por registro | 5 días | 0 | Los mismos datos bibliográficos de los libros |
+| Referencia | 3 | 3 días | 2 | Medidas en pulgadas |
+| Hemeroteca | 2 | 1 día | 1 | ISSN y periodicidad |
+| Mapoteca | No aplica | 1 día, hasta las 21:00 | 0 | Formatos JPG, PDF, Shape o DWG; USB de solo lectura |
+| Tecnoteca: laptop | 3 | 7 días | 2 | Número, marca, modelo, cargador y funda |
+| Tecnoteca: tableta | 10 | 7 días | 2 | Número, marca, modelo, cargador y funda |
+
+El inventario almacena por separado los ejemplares disponibles y el total registrado, así los préstamos no reducen el mínimo histórico.
 
 ## API disponible
 
@@ -179,26 +192,43 @@ La dirección local del backend es `http://localhost:3000`.
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/api/recursos` | Consultar el catálogo |
-| `POST` | `/api/recursos` | Registrar un recurso |
-| `GET` | `/api/usuarios` | Consultar usuarios |
-| `GET` | `/api/usuarios/estudiantes` | Consultar perfiles de estudiante de demostración |
-| `POST` | `/api/usuarios` | Registrar un usuario |
-| `GET` | `/api/prestamos` | Consultar préstamos activos |
-| `GET` | `/api/prestamos/todos` | Consultar todos los préstamos |
-| `POST` | `/api/prestamos` | Solicitar un préstamo o crear una reserva si no hay ejemplares |
-| `PATCH` | `/api/prestamos/:id/renovar` | Renovar un préstamo |
-| `PATCH` | `/api/prestamos/:id/devolver` | Devolver un préstamo |
-| `GET` | `/api/reservas` | Consultar la cola de reservas |
-| `DELETE` | `/api/reservas/:id` | Cancelar una reserva |
-| `GET` | `/api/multas` | Consultar multas |
-| `POST` | `/api/multas` | Registrar una multa |
-| `PATCH` | `/api/multas/:id/pagar` | Marcar una multa como pagada |
-| `GET` | `/api/actividades` | Consultar actividades |
-| `POST` | `/api/actividades` | Crear una actividad |
-| `POST` | `/api/actividades/:id/inscripciones` | Inscribir un usuario en una actividad |
+| `POST` | `/api/auth/login` | Iniciar sesión y obtener un JWT |
+| `GET` | `/api/auth/me` | Consultar el perfil autenticado |
+| `GET` | `/api/recursos` | Consultar el catálogo (público) |
+| `POST` | `/api/recursos` | Registrar recursos (Bibliotecario) |
+| `GET` | `/api/usuarios` | Consultar usuarios (Bibliotecario) |
+| `GET` | `/api/usuarios/estudiantes` | Consultar estudiantes (Bibliotecario) |
+| `POST` | `/api/usuarios` | Crear usuario y contraseña inicial (Bibliotecario) |
+| `GET` | `/api/prestamos` | Consultar préstamos activos propios o todos (Bibliotecario) |
+| `GET` | `/api/prestamos/todos` | Consultar préstamos propios o todos (Bibliotecario) |
+| `POST` | `/api/prestamos` | Registrar préstamo para un usuario (Bibliotecario) |
+| `PATCH` | `/api/prestamos/:id/renovar` | Renovar un préstamo propio o de cualquier usuario (Bibliotecario) |
+| `PATCH` | `/api/prestamos/:id/devolver` | Devolver un préstamo (Bibliotecario) |
+| `GET` | `/api/reservas` | Consultar reservas propias o todas (Bibliotecario) |
+| `POST` | `/api/reservas` | Crear una reserva propia (Estudiante/Profesor) |
+| `DELETE` | `/api/reservas/:id` | Cancelar reserva propia (o cualquier reserva como Bibliotecario) |
+| `GET` | `/api/multas` | Consultar multas propias o todas (Bibliotecario) |
+| `POST` | `/api/multas` | Registrar multa (Bibliotecario) |
+| `PATCH` | `/api/multas/:id/pagar` | Marcar una multa como pagada (Bibliotecario) |
+| `GET` | `/api/actividades` | Consultar actividades (usuario autenticado) |
+| `POST` | `/api/actividades` | Crear una actividad (Bibliotecario) |
+| `POST` | `/api/actividades/:id/inscripciones` | Inscribirse (Estudiante) |
 
 Las respuestas correctas de lectura siguen el formato `{ "success": true, "data": ... }`. En las operaciones de creación el servidor puede responder `201 Created`; las validaciones incorrectas responden con un estado de error y un mensaje JSON.
+
+Las rutas protegidas requieren `Authorization: Bearer <JWT>`. Una solicitud no autenticada responde `401`; una operación no permitida para el rol responde `403`. Los tokens expiran a las 8 horas.
+
+### Cuentas semilla y configuración
+
+La inicialización mantiene un mínimo de 50 estudiantes, 10 profesores y 3 bibliotecarios, y registra recursos de ejemplo en las colecciones. En desarrollo, las cuentas semilla usan la contraseña `Demo123!`; el acceso bibliotecario inicial es `lucia.demo@example.test`. La cuenta `valeria.demo@example.test` tiene una multa pendiente de ejemplo para validar el bloqueo por mora.
+
+Para establecer la contraseña de las cuentas semilla, define `DEMO_USER_PASSWORD` antes del primer inicio del backend. En producción, configura además un `JWT_SECRET` aleatorio de al menos 32 bytes. Los valores predeterminados solo se permiten en desarrollo local.
+
+### Preparar el esquema de Supabase
+
+El backend usa PostgreSQL en Supabase. Ejecuta [`supabase/setup.sql`](./supabase/setup.sql) en el **SQL Editor** para crear las tablas, índices y datos semilla. El script puede ejecutarse de nuevo y agrega la multa semilla pendiente de Valeria. No migra datos del archivo local anterior; el cambio comienza con el inventario de demostración.
+
+Usa el **Session Pooler** de Supabase, apropiado para el backend Express persistente. Copia [`.env.example`](./.env.example) a `.env`, descarga el certificado CA desde **Database Settings → SSL Configuration** de Supabase y guárdalo como `certs/prod-ca-2021.crt`. Luego completa `DATABASE_URL`, `DEMO_USER_PASSWORD`, `JWT_SECRET` y deja `PG_CA_CERT_PATH=./certs/prod-ca-2021.crt`. El backend valida TLS y el certificado del servidor, revisa que exista el esquema y crea los hashes bcrypt de las cuentas semilla que aún no tengan contraseña. Nunca publiques ni compartas `.env`, contraseñas o claves; la URL de PostgreSQL es privada y solo se usa en el backend. No uses `anon` ni `service_role` en el frontend.
 
 ## Requisitos
 
@@ -220,6 +250,11 @@ Los archivos Compose unificados están en el repositorio backend. Desde la carpe
 
 ```bash
 cd sgb-backend
+```
+
+Antes de iniciar, copia `.env.example` a `.env` (en PowerShell: `Copy-Item .env.example .env`) y completa `DATABASE_URL`, `DEMO_USER_PASSWORD` y `JWT_SECRET`.
+
+```bash
 docker compose up --build
 ```
 
@@ -246,7 +281,7 @@ Si iniciaste desarrollo, detén ese perfil con:
 docker compose -f docker-compose.dev.yml down
 ```
 
-En producción, Nginx sirve la interfaz y reenvía `/api` al backend por la red interna. En ambos modos, SQLite se conserva en un volumen Docker, el backend dispone de un healthcheck y el frontend espera a que la API esté saludable.
+En producción, Nginx sirve la interfaz y reenvía `/api` al backend por la red interna. En ambos modos, el backend conecta con Supabase mediante TLS, dispone de un healthcheck y el frontend espera a que la API esté saludable.
 
 ### Archivos Docker
 
@@ -271,14 +306,14 @@ npm run dev
 
 La API quedará disponible en `http://localhost:3000`. Para consultar el catálogo, abre `http://localhost:3000/api/recursos`.
 
-El archivo SQLite se determina con la variable `DB_PATH`. Si no se define, el backend utiliza `biblioteca.db` dentro del proyecto. En Docker Compose se configura en `/app/data/biblioteca.db`.
+La conexión a Supabase se configura en `DATABASE_URL` dentro de `.env`. No configures la URL en el frontend. Para ejecutar la prueba de aceptación contra una base aislada, define `TEST_DATABASE_URL` con una base desechable que ya tenga el esquema; nunca apuntes la prueba a producción.
 
 ## Estructura del backend
 
 ```text
 sgb-backend/
 ├── src/
-│   ├── config/          # Conexión, esquema y datos iniciales de SQLite
+│   ├── config/          # Pool de conexión y validación de Supabase
 │   ├── controllers/     # Controladores HTTP y respuestas de la API
 │   ├── repositories/    # Consultas SQL y persistencia
 │   ├── services/        # Casos de uso y lógica de aplicación
@@ -286,6 +321,7 @@ sgb-backend/
 │   └── ...
 ├── Dockerfile
 ├── Dockerfile.dev
+├── .env.example
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
 ├── docker-compose.backend.yml
@@ -303,6 +339,6 @@ curl http://localhost:3000/api/recursos
 
 La primera inicialización de una base vacía agrega datos ficticios de ejemplo y prepara las tablas necesarias. Las migraciones actuales preservan los datos existentes.
 
-## Advertencia de seguridad
+## Alcance de seguridad
 
-Esta aplicación se preparó para una demostración académica. Algunas operaciones son públicas y no requieren autenticación; los datos son compartidos entre quienes usan la demo. Utiliza únicamente datos ficticios. No expongas el sistema en una red pública ni lo uses para guardar información personal real sin implementar autenticación, autorización y las medidas de seguridad necesarias.
+La API protege las operaciones según el rol y almacena las contraseñas con hash bcrypt; el frontend mantiene el JWT en almacenamiento de sesión. El proyecto sigue siendo una aplicación académica: usa credenciales y datos ficticios, define secretos seguros por entorno y no reutilices las contraseñas semilla en producción.

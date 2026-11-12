@@ -8,7 +8,9 @@ function parseId(value) {
 class MultaController {
     async obtenerTodas(req, res) {
         try {
-            const multas = await multaService.obtenerTodas();
+            const multas = await multaService.obtenerTodas(
+                req.user.rol === 'Bibliotecario' ? undefined : req.user.id,
+            );
             return res.status(200).json({ success: true, data: multas });
         } catch (error) {
             return res.status(500).json({ success: false, message: error.message });
@@ -16,12 +18,11 @@ class MultaController {
     }
 
     async crear(req, res) {
-        const { usuario, concepto, monto, fecha } = req.body ?? {};
+        const { usuarioId, concepto, monto, fecha } = req.body ?? {};
         const fechaMulta = fecha ?? new Date().toISOString().slice(0, 10);
         if (
-            typeof usuario !== 'string'
-            || !usuario.trim()
-            || usuario.trim().length > 160
+            !Number.isSafeInteger(usuarioId)
+            || usuarioId < 1
             || typeof concepto !== 'string'
             || !concepto.trim()
             || concepto.trim().length > 240
@@ -38,13 +39,16 @@ class MultaController {
 
         try {
             const multa = await multaService.crear({
-                usuario: usuario.trim(),
+                usuarioId,
                 concepto: concepto.trim(),
                 monto: Math.round(monto * 100) / 100,
                 fecha: fechaMulta,
             });
             return res.status(201).json({ success: true, data: multa });
         } catch (error) {
+            if (error.status === 404) {
+                return res.status(404).json({ success: false, message: 'No se encontró el usuario seleccionado.' });
+            }
             return res.status(500).json({ success: false, message: error.message });
         }
     }

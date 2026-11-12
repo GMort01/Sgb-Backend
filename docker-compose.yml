@@ -8,9 +8,10 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
-      DB_PATH: /app/data/biblioteca.db
+    env_file:
+      - .env
     volumes:
-      - backend_data:/app/data
+      - ./certs:/app/certs:ro
     restart: unless-stopped
     healthcheck:
       test:
@@ -37,9 +38,6 @@ services:
     restart: unless-stopped
     networks:
       - sgb-network
-
-volumes:
-  backend_data:
 
 networks:
   sgb-network:

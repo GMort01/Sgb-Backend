@@ -2,7 +2,9 @@ const actividadService = require('../services/actividadService');
 
 class ActividadController {
     async obtenerTodas(req, res) {
-        const usuarioId = req.query.usuarioId === undefined ? 0 : Number(req.query.usuarioId);
+        const usuarioId = req.user.rol === 'Bibliotecario'
+            ? (req.query.usuarioId === undefined ? 0 : Number(req.query.usuarioId))
+            : req.user.id;
         if (!Number.isSafeInteger(usuarioId) || usuarioId < 0) {
             return res.status(400).json({ success: false, message: 'El identificador de usuario no es válido.' });
         }
@@ -45,7 +47,7 @@ class ActividadController {
 
     async inscribir(req, res) {
         const actividadId = Number(req.params.id);
-        const { usuarioId } = req.body ?? {};
+        const usuarioId = req.user.id;
         if (
             !Number.isSafeInteger(actividadId)
             || actividadId < 1

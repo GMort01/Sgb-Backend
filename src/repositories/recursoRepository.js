@@ -1,42 +1,51 @@
-const db = require('../config/database');
+const { all, run } = require('./transaction');
 
 class RecursoRepository {
     obtenerTodos() {
-        return new Promise((resolve, reject) => {
-            db.all(
-                'SELECT id, titulo, autor, coleccion, ejemplares, estado FROM recursos ORDER BY id DESC',
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows);
-                },
-            );
-        });
+        return all(
+            `SELECT id, titulo, autor, coleccion, ejemplares, ejemplares_totales AS "ejemplaresTotales",
+                estado, isbn, resumen, fecha_publicacion AS "fechaPublicacion",
+                dimensiones, encuadernacion, issn, periodicidad, formato,
+                tipo_equipo AS "tipoEquipo", numero_equipo AS "numeroEquipo",
+                marca, modelo, cargador, funda
+             FROM recursos ORDER BY id DESC`,
+        );
     }
 
-    crear(recurso) {
-        return new Promise((resolve, reject) => {
-            const disponible = recurso.estado === 'Disponible' ? 1 : 0;
-            db.run(
-                `INSERT INTO recursos (titulo, autor, coleccion, ejemplares, estado, disponible)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [
-                    recurso.titulo,
-                    recurso.autor || null,
-                    recurso.coleccion,
-                    recurso.ejemplares,
-                    recurso.estado,
-                    disponible,
-                ],
-                function (err) {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-                    resolve({ id: this.lastID, ...recurso });
-                },
-            );
-        });
+    async crear(recurso) {
+        const result = await run(
+            `INSERT INTO recursos (
+                titulo, autor, coleccion, ejemplares, estado, disponible,
+                ejemplares_totales, isbn, resumen, fecha_publicacion, dimensiones,
+                encuadernacion, issn, periodicidad, formato, tipo_equipo,
+                numero_equipo, marca, modelo, cargador, funda
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id`,
+            [
+                recurso.titulo,
+                recurso.autor || null,
+                recurso.coleccion,
+                recurso.ejemplares,
+                recurso.estado,
+                recurso.estado === 'Disponible',
+                recurso.ejemplares,
+                recurso.isbn || null,
+                recurso.resumen || null,
+                recurso.fechaPublicacion || null,
+                recurso.dimensiones || null,
+                recurso.encuadernacion || null,
+                recurso.issn || null,
+                recurso.periodicidad || null,
+                recurso.formato || null,
+                recurso.tipoEquipo || null,
+                recurso.numeroEquipo || null,
+                recurso.marca || null,
+                recurso.modelo || null,
+                Boolean(recurso.cargador),
+                Boolean(recurso.funda),
+            ],
+        );
+        return { id: result.rows[0].id, ...recurso, ejemplaresTotales: recurso.ejemplares };
     }
 }
 
