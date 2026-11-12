@@ -31,6 +31,7 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     process.env.PORT = '0';
     process.env.NODE_ENV = 'test';
     process.env.JWT_SECRET = 'test-secret-with-more-than-32-characters';
+    process.env.CORS_ORIGINS = 'https://portal.example.test';
     const demoPassword = process.env.TEST_DEMO_USER_PASSWORD || 'Demo123!';
     process.env.DEMO_USER_PASSWORD = demoPassword;
 
@@ -54,6 +55,27 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     }
     assert.ok(app.locals.server?.listening, 'API starts after database initialization');
     const base = `http://127.0.0.1:${app.locals.server.address().port}/api`;
+
+    const health = await request(`http://127.0.0.1:${app.locals.server.address().port}`, '/health');
+    assert.equal(health.status, 200);
+    assert.equal(health.body.status, 'ok');
+
+    const allowedPreflight = await fetch(`${base}/auth/login`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://portal.example.test',
+            'Access-Control-Request-Method': 'POST',
+        },
+    });
+    assert.equal(allowedPreflight.headers.get('access-control-allow-origin'), 'https://portal.example.test');
+    const rejectedPreflight = await fetch(`${base}/auth/login`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://untrusted.example.test',
+            'Access-Control-Request-Method': 'POST',
+        },
+    });
+    assert.equal(rejectedPreflight.headers.get('access-control-allow-origin'), null);
 
     const catalogResponse = await request(base, '/recursos');
     assert.equal(catalogResponse.status, 200);

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: sgb-backend
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DEMO_USER_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true

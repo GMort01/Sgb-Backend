@@ -11,8 +11,27 @@ const { autenticar, permitirRoles } = require('./middleware/auth');
 const db = require('./config/database');
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173'))
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+app.use(cors({
+    origin(origin, callback) {
+        callback(null, !origin || allowedOrigins.includes(origin.replace(/\/+$/, '')));
+    },
+}));
 app.use(express.json());
+
+app.get('/health', async (_req, res) => {
+    try {
+        await db.query('SELECT 1');
+        return res.status(200).json({ status: 'ok' });
+    } catch (error) {
+        console.error('La comprobación de salud no pudo consultar PostgreSQL:', error.message);
+        return res.status(503).json({ status: 'unavailable' });
+    }
+});
 
 app.post('/api/auth/login', (req, res) => authController.iniciarSesion(req, res));
 app.get('/api/auth/me', autenticar, (req, res) => authController.perfil(req, res));

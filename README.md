@@ -230,6 +230,24 @@ El backend usa PostgreSQL en Supabase. Ejecuta [`supabase/setup.sql`](./supabase
 
 Usa el **Session Pooler** de Supabase, apropiado para el backend Express persistente. Copia [`.env.example`](./.env.example) a `.env`, descarga el certificado CA desde **Database Settings → SSL Configuration** de Supabase y guárdalo como `certs/prod-ca-2021.crt`. Luego completa `DATABASE_URL`, `DEMO_USER_PASSWORD`, `JWT_SECRET` y deja `PG_CA_CERT_PATH=./certs/prod-ca-2021.crt`. El backend valida TLS y el certificado del servidor, revisa que exista el esquema y crea los hashes bcrypt de las cuentas semilla que aún no tengan contraseña. Nunca publiques ni compartas `.env`, contraseñas o claves; la URL de PostgreSQL es privada y solo se usa en el backend. No uses `anon` ni `service_role` en el frontend.
 
+### Despliegue del backend en Render
+
+El archivo [`render.yaml`](./render.yaml) prepara un servicio Node con `npm ci`, `npm start` y la comprobación de salud `/health`. Conecta Render al repositorio `Sgb-Backend` y crea el servicio usando el Blueprint detectado. Si lo configuras manualmente, usa la raíz del repositorio como **Root Directory**, con esos mismos comandos.
+
+En Render configura estas variables:
+
+| Variable | Valor |
+|---|---|
+| `DATABASE_URL` | URL nueva del **Session Pooler** de Supabase. Mantén esta credencial únicamente en Render. |
+| `DEMO_USER_PASSWORD` | Contraseña inicial larga y única; solo se aplica a cuentas semilla que aún no tengan hash. |
+| `JWT_SECRET` | Render la genera mediante el Blueprint; conserva el valor y no lo compartas. |
+| `CORS_ORIGINS` | Añádela después de crear el frontend: el origen de Vercel, por ejemplo `https://tu-proyecto.vercel.app` (sin `/` final). Se pueden separar varios orígenes con comas. |
+| `NODE_ENV` | `production`; queda configurada por el Blueprint. |
+
+Render puede desplegar inicialmente sin `CORS_ORIGINS`; mientras esté vacía, el navegador no podrá invocar la API desde otro origen. Cuando Vercel asigne el dominio, agrega `CORS_ORIGINS` en Render y vuelve a desplegar. `/health` comprueba la conexión a PostgreSQL y Render lo usa para detectar si la API está disponible. Si Supabase requiere un CA personalizado, cárgalo como Secret File en Render y establece `PG_CA_CERT_PATH` con su ruta; deja esa variable sin configurar si la validación TLS funciona con los certificados del sistema.
+
+Antes de hacer público el servicio, restablece la contraseña de la base de datos de Supabase si alguna vez fue compartida, y cambia o elimina las cuentas y contraseñas semilla de prueba. `DEMO_USER_PASSWORD` no sustituye hashes que ya existan. El plan gratuito de Render puede suspender el servicio por inactividad, por lo que la primera solicitud puede tardar en responder.
+
 ## Requisitos
 
 - Docker y Docker Compose para ejecutar el sistema completo.
