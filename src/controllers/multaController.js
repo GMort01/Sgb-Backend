@@ -27,7 +27,7 @@ class MultaController {
             || !concepto.trim()
             || concepto.trim().length > 240
             || typeof monto !== 'number'
-            || !Number.isFinite(monto)
+            || !Number.isSafeInteger(monto)
             || monto <= 0
             || monto > 100000000
             || typeof fechaMulta !== 'string'
@@ -41,7 +41,7 @@ class MultaController {
             const multa = await multaService.crear({
                 usuarioId,
                 concepto: concepto.trim(),
-                monto: Math.round(monto * 100) / 100,
+                monto,
                 fecha: fechaMulta,
             });
             return res.status(201).json({ success: true, data: multa });
@@ -60,14 +60,19 @@ class MultaController {
         }
 
         try {
-            const multa = await multaService.marcarPagada(id);
+            const usuarioId = req.user.rol === 'Bibliotecario' ? undefined : req.user.id;
+            const multa = await multaService.marcarPagada(id, usuarioId);
             if (!multa) {
                 return res.status(409).json({
                     success: false,
-                    message: 'La multa no existe o ya fue pagada.',
+                    message: 'La multa no existe, ya fue pagada o no pertenece a tu cuenta.',
                 });
             }
-            return res.status(200).json({ success: true, data: multa });
+            return res.status(200).json({
+                success: true,
+                data: multa,
+                ...(usuarioId === undefined ? {} : { simulatedPayment: true }),
+            });
         } catch (error) {
             return res.status(500).json({ success: false, message: error.message });
         }

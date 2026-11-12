@@ -101,6 +101,7 @@ class PrestamoController {
                     USER_NOT_FOUND: 'No se encontró el usuario de la sesión.',
                     USER_HAS_UNPAID_FINE: 'Tienes multas pendientes y no puedes usar los servicios de circulación.',
                     RESOURCE_NOT_AVAILABLE: 'Este recurso no está disponible.',
+                    RESOURCE_JUST_BORROWED: 'El último ejemplar acaba de ser apartado. Actualiza el catálogo e inténtalo de nuevo.',
                     RESERVATION_NOT_ALLOWED: 'Solo se pueden reservar recursos de Colección General o tabletas.',
                     RESOURCE_AVAILABLE: 'Todavía hay ejemplares disponibles para préstamo.',
                     ALREADY_RESERVED: 'Ya tienes un préstamo o reserva de este recurso.',

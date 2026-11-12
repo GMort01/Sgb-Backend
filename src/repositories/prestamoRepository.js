@@ -1,5 +1,19 @@
 const { all, get, transaction } = require('./transaction');
 
+const reservaSelect = `
+    SELECT
+        id,
+        usuario,
+        usuario_id AS "usuarioId",
+        codigo_recurso AS "codigoRecurso",
+        recurso_id AS "recursoId",
+        fecha_reserva AS "fechaReserva",
+        posicion,
+        estado,
+        vence_en AS "venceEn"
+    FROM reservas
+`;
+
 const prestamoSelect = `
     SELECT
         id,
@@ -37,6 +51,88 @@ function reglasPrestamo(recurso) {
     };
 }
 
+async function compactarEspera(query, recursoId, posicion) {
+    await query.run(
+        `UPDATE reservas SET posicion = posicion - 1
+         WHERE recurso_id = ? AND estado = 'Espera' AND posicion > ?`,
+        [recursoId, posicion],
+    );
+}
+
+async function asignarApartadosEnEspera(query, recursoId) {
+    const recurso = await query.get(
+        'SELECT id, ejemplares FROM recursos WHERE id = ? FOR UPDATE',
+        [recursoId],
+    );
+    if (!recurso) return [];
+
+    const apartados = [];
+    while (recurso.ejemplares > 0) {
+        const siguiente = await query.get(
+            `${reservaSelect}
+             WHERE recurso_id = ? AND estado = 'Espera'
+             ORDER BY posicion, fecha_reserva, id
+             LIMIT 1 FOR UPDATE`,
+            [recursoId],
+        );
+        if (!siguiente) return apartados;
+
+        const multaPendiente = await query.get(
+            "SELECT id FROM multas WHERE usuario_id = ? AND estado = 'Pendiente' LIMIT 1",
+            [siguiente.usuarioId],
+        );
+        if (multaPendiente) {
+            await query.run('DELETE FROM reservas WHERE id = ?', [siguiente.id]);
+            await compactarEspera(query, recursoId, siguiente.posicion);
+            continue;
+        }
+
+        const descontado = await query.run(
+            'UPDATE recursos SET ejemplares = ejemplares - 1 WHERE id = ? AND ejemplares > 0',
+            [recursoId],
+        );
+        if (descontado.changes !== 1) return apartados;
+        await query.run(
+            `UPDATE reservas SET estado = 'Apartada', posicion = 0,
+                vence_en = CURRENT_TIMESTAMP + INTERVAL '48 hours'
+             WHERE id = ?`,
+            [siguiente.id],
+        );
+        apartados.push(await query.get(`${reservaSelect} WHERE id = ?`, [siguiente.id]));
+        await compactarEspera(query, recursoId, siguiente.posicion);
+        recurso.ejemplares -= 1;
+    }
+    return apartados;
+}
+
+async function expirarApartadosVencidos() {
+    return transaction(async (query) => {
+        const vencidas = await query.all(
+            `SELECT id, recurso_id AS "recursoId"
+             FROM reservas
+             WHERE estado = 'Apartada' AND vence_en <= CURRENT_TIMESTAMP
+             ORDER BY vence_en, id`,
+        );
+        let expiradas = 0;
+        for (const candidate of vencidas) {
+            await query.get('SELECT id FROM recursos WHERE id = ? FOR UPDATE', [candidate.recursoId]);
+            const reserva = await query.get(
+                `SELECT id FROM reservas
+                 WHERE id = ? AND estado = 'Apartada' AND vence_en <= CURRENT_TIMESTAMP
+                 FOR UPDATE`,
+                [candidate.id],
+            );
+            if (!reserva) continue;
+
+            await query.run('DELETE FROM reservas WHERE id = ?', [reserva.id]);
+            await query.run('UPDATE recursos SET ejemplares = ejemplares + 1 WHERE id = ?', [candidate.recursoId]);
+            await asignarApartadosEnEspera(query, candidate.recursoId);
+            expiradas += 1;
+        }
+        return expiradas;
+    });
+}
+
 class PrestamoRepository {
     obtenerActivos(usuarioId) {
         return all(
@@ -61,12 +157,19 @@ class PrestamoRepository {
                 codigo_recurso AS "codigoRecurso",
                 recurso_id AS "recursoId",
                 fecha_reserva AS "fechaReserva",
-                posicion
+                posicion,
+                estado,
+                vence_en AS "venceEn"
              FROM reservas
              WHERE (CAST(? AS INTEGER) IS NULL OR usuario_id = ?)
-             ORDER BY posicion, fecha_reserva`,
+             ORDER BY recurso_id, CASE WHEN estado = 'Apartada' THEN 0 ELSE 1 END,
+                posicion, fecha_reserva, id`,
             [usuarioId ?? null, usuarioId ?? null],
         );
+    }
+
+    expirarApartadosVencidos() {
+        return expirarApartadosVencidos();
     }
 
     solicitar(usuarioId, recursoId, bibliotecarioId) {
@@ -103,10 +206,12 @@ class PrestamoRepository {
                 throw Object.assign(new Error('ALREADY_BORROWED'), { status: 409 });
             }
             const existingReservation = await query.get(
-                'SELECT id FROM reservas WHERE usuario_id = ? AND recurso_id = ?',
+                `SELECT id, estado FROM reservas WHERE usuario_id = ? AND recurso_id = ?`,
                 [usuarioId, recursoId],
             );
-            if (existingReservation) {
+            const recogerApartado = resource.coleccion === 'General'
+                && existingReservation?.estado === 'Apartada';
+            if (existingReservation && !recogerApartado) {
                 throw Object.assign(new Error('ALREADY_RESERVED'), { status: 409 });
             }
 
@@ -114,7 +219,7 @@ class PrestamoRepository {
             const codigoRecurso = `REC-${resource.id}`;
             const mapoteca = resource.coleccion === 'Mapoteca';
             const reglas = reglasPrestamo(resource);
-            if (mapoteca || resource.ejemplares > 0) {
+            if (mapoteca || resource.ejemplares > 0 || recogerApartado) {
                 if (mapoteca) {
                     const activeMapLoan = await query.get(
                         "SELECT id FROM prestamos WHERE recurso_id = ? AND estado = 'Activo'",
@@ -123,7 +228,7 @@ class PrestamoRepository {
                     if (activeMapLoan) {
                         throw Object.assign(new Error('RESOURCE_NOT_AVAILABLE'), { status: 409 });
                     }
-                } else {
+                } else if (!recogerApartado) {
                     const stock = await query.run(
                         'UPDATE recursos SET ejemplares = ejemplares - 1 WHERE id = ? AND ejemplares > 0',
                         [recursoId],
@@ -148,6 +253,9 @@ class PrestamoRepository {
                         bibliotecarioId,
                     ],
                 );
+                if (recogerApartado) {
+                    await query.run('DELETE FROM reservas WHERE id = ?', [existingReservation.id]);
+                }
                 return {
                     tipo: 'prestamo',
                     data: await query.get(`${prestamoSelect} WHERE id = ?`, [inserted.rows[0].id]),
@@ -160,12 +268,13 @@ class PrestamoRepository {
             }
 
             const row = await query.get(
-                'SELECT COALESCE(MAX(posicion), 0) + 1 AS posicion FROM reservas WHERE recurso_id = ?',
+                `SELECT COALESCE(MAX(posicion), 0) + 1 AS posicion
+                 FROM reservas WHERE recurso_id = ? AND estado = 'Espera'`,
                 [recursoId],
             );
             const inserted = await query.run(
-                `INSERT INTO reservas (usuario, usuario_id, codigo_recurso, recurso_id, fecha_reserva, posicion)
-                 VALUES (?, ?, ?, ?, (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT, ?)
+                `INSERT INTO reservas (usuario, usuario_id, codigo_recurso, recurso_id, fecha_reserva, posicion, estado)
+                 VALUES (?, ?, ?, ?, (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT, ?, 'Espera')
                  RETURNING id`,
                 [nombreUsuario, usuarioId, codigoRecurso, recursoId, row.posicion],
             );
@@ -174,7 +283,8 @@ class PrestamoRepository {
                 data: await query.get(
                     `SELECT id, usuario, usuario_id AS "usuarioId",
                         codigo_recurso AS "codigoRecurso", recurso_id AS "recursoId",
-                        fecha_reserva AS "fechaReserva", posicion
+                        fecha_reserva AS "fechaReserva", posicion, estado,
+                        vence_en AS "venceEn"
                      FROM reservas WHERE id = ?`,
                     [inserted.rows[0].id],
                 ),
@@ -205,7 +315,8 @@ class PrestamoRepository {
                 || (resource.coleccion === 'Tecnoteca' && resource.tipo_equipo === 'Tableta'))) {
                 throw Object.assign(new Error('RESERVATION_NOT_ALLOWED'), { status: 409 });
             }
-            if (resource.ejemplares > 0) {
+            const apartadoGeneral = resource.coleccion === 'General' && resource.ejemplares > 0;
+            if (resource.ejemplares > 0 && !apartadoGeneral) {
                 throw Object.assign(new Error('RESOURCE_AVAILABLE'), { status: 409 });
             }
             const existing = await query.get(
@@ -217,19 +328,37 @@ class PrestamoRepository {
             if (existing) throw Object.assign(new Error('ALREADY_RESERVED'), { status: 409 });
 
             const { posicion } = await query.get(
-                'SELECT COALESCE(MAX(posicion), 0) + 1 AS posicion FROM reservas WHERE recurso_id = ?',
+                `SELECT COALESCE(MAX(posicion), 0) + 1 AS posicion
+                 FROM reservas WHERE recurso_id = ? AND estado = 'Espera'`,
                 [recursoId],
             );
             const inserted = await query.run(
-                `INSERT INTO reservas (usuario, usuario_id, codigo_recurso, recurso_id, fecha_reserva, posicion)
-                 VALUES (?, ?, ?, ?, (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT, ?)
+                `INSERT INTO reservas
+                    (usuario, usuario_id, codigo_recurso, recurso_id, fecha_reserva, posicion, estado, vence_en)
+                 VALUES (?, ?, ?, ?, (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT, ?,
+                    ?, CASE WHEN ? THEN CURRENT_TIMESTAMP + INTERVAL '48 hours' ELSE NULL END)
                  RETURNING id`,
-                [`${user.nombres} ${user.apellidos}`, usuarioId, `REC-${resource.id}`, resource.id, posicion],
+                [
+                    `${user.nombres} ${user.apellidos}`,
+                    usuarioId,
+                    `REC-${resource.id}`,
+                    resource.id,
+                    apartadoGeneral ? 0 : posicion,
+                    apartadoGeneral ? 'Apartada' : 'Espera',
+                    apartadoGeneral,
+                ],
             );
+            if (apartadoGeneral) {
+                const descontado = await query.run(
+                    'UPDATE recursos SET ejemplares = ejemplares - 1 WHERE id = ? AND ejemplares > 0',
+                    [recursoId],
+                );
+                if (descontado.changes !== 1) {
+                    throw Object.assign(new Error('RESOURCE_JUST_BORROWED'), { status: 409 });
+                }
+            }
             return query.get(
-                `SELECT id, usuario, usuario_id AS "usuarioId", codigo_recurso AS "codigoRecurso",
-                    recurso_id AS "recursoId", fecha_reserva AS "fechaReserva", posicion
-                 FROM reservas WHERE id = ?`,
+                `${reservaSelect} WHERE id = ?`,
                 [inserted.rows[0].id],
             );
         });
@@ -244,15 +373,18 @@ class PrestamoRepository {
             if (!candidate) return false;
             await query.get('SELECT id FROM recursos WHERE id = ? FOR UPDATE', [candidate.recursoId]);
             const reservation = await query.get(
-                'SELECT id, recurso_id AS "recursoId", posicion FROM reservas WHERE id = ? AND usuario_id = ? FOR UPDATE',
+                `SELECT id, recurso_id AS "recursoId", posicion, estado
+                 FROM reservas WHERE id = ? AND usuario_id = ? FOR UPDATE`,
                 [id, usuarioId],
             );
             if (!reservation) return false;
             await query.run('DELETE FROM reservas WHERE id = ?', [id]);
-            await query.run(
-                'UPDATE reservas SET posicion = posicion - 1 WHERE recurso_id = ? AND posicion > ?',
-                [reservation.recursoId, reservation.posicion],
-            );
+            if (reservation.estado === 'Apartada') {
+                await query.run('UPDATE recursos SET ejemplares = ejemplares + 1 WHERE id = ?', [reservation.recursoId]);
+            } else {
+                await compactarEspera(query, reservation.recursoId, reservation.posicion);
+            }
+            await asignarApartadosEnEspera(query, reservation.recursoId);
             return true;
         });
     }
@@ -310,15 +442,14 @@ class PrestamoRepository {
 
             await query.run("UPDATE prestamos SET estado = 'Devuelto' WHERE id = ?", [id]);
             const reservation = await query.get(
-                `SELECT id, usuario, usuario_id AS "usuarioId",
-                    codigo_recurso AS "codigoRecurso", recurso_id AS "recursoId",
-                    fecha_reserva AS "fechaReserva", posicion
-                 FROM reservas WHERE recurso_id = ? ORDER BY posicion, fecha_reserva, id
+                `${reservaSelect}
+                 WHERE recurso_id = ? AND estado = 'Espera' ORDER BY posicion, fecha_reserva, id
                  LIMIT 1 FOR UPDATE`,
                 [loan.recursoId],
             );
 
             let promotedLoan = null;
+            let reservaPromovida = null;
             const resource = await query.get(
                 'SELECT coleccion, tipo_equipo FROM recursos WHERE id = ?',
                 [loan.recursoId],
@@ -329,7 +460,10 @@ class PrestamoRepository {
                     [reservation.usuarioId],
                 )
                 : null;
-            if (reservation && !reservationUserHasFine) {
+            if (resource?.coleccion === 'General') {
+                await query.run('UPDATE recursos SET ejemplares = ejemplares + 1 WHERE id = ?', [loan.recursoId]);
+                [reservaPromovida] = await asignarApartadosEnEspera(query, loan.recursoId);
+            } else if (reservation && !reservationUserHasFine) {
                 const reglas = reglasPrestamo(resource);
                 const inserted = await query.run(
                     `INSERT INTO prestamos
@@ -348,10 +482,7 @@ class PrestamoRepository {
                     ],
                 );
                 await query.run('DELETE FROM reservas WHERE id = ?', [reservation.id]);
-                await query.run(
-                    'UPDATE reservas SET posicion = posicion - 1 WHERE recurso_id = ? AND posicion > ?',
-                    [loan.recursoId, reservation.posicion],
-                );
+                await compactarEspera(query, loan.recursoId, reservation.posicion);
                 promotedLoan = await query.get(`${prestamoSelect} WHERE id = ?`, [inserted.rows[0].id]);
             } else if (resource?.coleccion !== 'Mapoteca') {
                 await query.run('UPDATE recursos SET ejemplares = ejemplares + 1 WHERE id = ?', [loan.recursoId]);
@@ -360,6 +491,7 @@ class PrestamoRepository {
             return {
                 prestamo: await query.get(`${prestamoSelect} WHERE id = ?`, [id]),
                 promovido: promotedLoan,
+                reservaPromovida,
             };
         });
     }

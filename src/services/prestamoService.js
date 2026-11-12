@@ -10,7 +10,12 @@ class PrestamoService {
     }
 
     obtenerReservas(usuarioId) {
-        return prestamoRepository.obtenerReservas(usuarioId);
+        return this.expirarApartadosVencidos()
+            .then(() => prestamoRepository.obtenerReservas(usuarioId));
+    }
+
+    expirarApartadosVencidos() {
+        return prestamoRepository.expirarApartadosVencidos();
     }
 
     renovar(id, usuarioId) {
@@ -18,19 +23,23 @@ class PrestamoService {
     }
 
     solicitar(usuarioId, recursoId, bibliotecarioId) {
-        return prestamoRepository.solicitar(usuarioId, recursoId, bibliotecarioId);
+        return this.expirarApartadosVencidos()
+            .then(() => prestamoRepository.solicitar(usuarioId, recursoId, bibliotecarioId));
     }
 
     reservar(usuarioId, recursoId) {
-        return prestamoRepository.reservar(usuarioId, recursoId);
+        return this.expirarApartadosVencidos()
+            .then(() => prestamoRepository.reservar(usuarioId, recursoId));
     }
 
     cancelarReserva(id, usuarioId) {
-        return prestamoRepository.cancelarReserva(id, usuarioId);
+        return this.expirarApartadosVencidos()
+            .then(() => prestamoRepository.cancelarReserva(id, usuarioId));
     }
 
     devolver(id, bibliotecarioId) {
-        return prestamoRepository.devolver(id, bibliotecarioId);
+        return this.expirarApartadosVencidos()
+            .then(() => prestamoRepository.devolver(id, bibliotecarioId));
     }
 }
 

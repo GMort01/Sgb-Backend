@@ -28,13 +28,14 @@ class MultaRepository {
         });
     }
 
-    marcarPagada(id) {
+    marcarPagada(id, usuarioId) {
         return transaction(async (query) => {
             const updated = await query.run(
                 `UPDATE multas SET estado = 'Pagada'
                  WHERE id = ? AND estado = 'Pendiente'
+                   AND (CAST(? AS INTEGER) IS NULL OR usuario_id = ?)
                  RETURNING id, usuario, concepto, monto::DOUBLE PRECISION AS monto, fecha, estado`,
-                [id],
+                [id, usuarioId ?? null, usuarioId ?? null],
             );
             if (updated.changes === 0) return null;
             return updated.rows[0];

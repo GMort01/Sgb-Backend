@@ -53,6 +53,21 @@ async function initializeDatabase() {
         throw new Error(`Faltan tablas en Supabase: ${missingTables.join(', ')}. Ejecuta supabase/setup.sql.`);
     }
 
+    const reservationColumns = await db.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'reservas'
+           AND column_name = ANY($1::TEXT[])`,
+        [['estado', 'vence_en']],
+    );
+    const existingReservationColumns = new Set(reservationColumns.rows.map(({ column_name }) => column_name));
+    const missingReservationColumns = ['estado', 'vence_en'].filter((column) => !existingReservationColumns.has(column));
+    if (missingReservationColumns.length) {
+        throw new Error(
+            `Faltan columnas en public.reservas: ${missingReservationColumns.join(', ')}. `
+            + 'Ejecuta supabase/migrations/20261112_reservas_apartados.sql.',
+        );
+    }
+
     const missingPasswords = await db.query(
         'SELECT COUNT(*)::INTEGER AS count FROM public.usuarios WHERE password_hash IS NULL',
     );

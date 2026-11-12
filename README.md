@@ -164,9 +164,9 @@ El diagrama representa los componentes y flujos implementados en este proyecto; 
 
 - Consultar y registrar recursos bibliográficos.
 - Consultar estudiantes y usuarios; registrar usuarios.
-- Registrar préstamos asociados al usuario y bibliotecario; cuando no hay ejemplares de General o tabletas, entrar en cola de reserva.
-- Renovar o devolver préstamos; al devolver, asignar el ejemplar a una reserva pendiente cuando corresponde.
-- Consultar y cancelar reservas.
+- Registrar préstamos asociados al usuario y bibliotecario; el estudiante puede apartar un ejemplar disponible de Colección General durante 48 horas para recogerlo en biblioteca.
+- Renovar o devolver préstamos; una devolución de Colección General atiende a la primera persona de la lista de espera y le crea un apartado de 48 horas.
+- Consultar y cancelar apartados y reservas en lista de espera; los apartados vencidos liberan el ejemplar automáticamente.
 - Registrar multas y marcarlas como pagadas.
 - Publicar actividades e inscribir usuarios respetando los cupos.
 - Iniciar sesión con JWT y proteger las operaciones por rol; los préstamos y reservas se bloquean si hay multas pendientes.
@@ -176,7 +176,7 @@ El diagrama representa los componentes y flujos implementados en este proyecto; 
 
 | Colección/tipo | Mínimo de ejemplares | Plazo | Renovaciones | Datos específicos |
 |---|---:|---:|---:|---|
-| General | 5 por registro | 15 días | 5 | ISBN, resumen, autores, publicación, dimensiones y encuadernación |
+| General | 5 por registro | 15 días | 5 | Apartado web para recoger en 48 horas; ISBN, resumen, autores, publicación, dimensiones y encuadernación |
 | Reserva | 10 por registro | 5 días | 0 | Los mismos datos bibliográficos de los libros |
 | Referencia | 3 | 3 días | 2 | Medidas en pulgadas |
 | Hemeroteca | 2 | 1 día | 1 | ISSN y periodicidad |
@@ -205,7 +205,7 @@ La dirección local del backend es `http://localhost:3000`.
 | `PATCH` | `/api/prestamos/:id/renovar` | Renovar un préstamo propio o de cualquier usuario (Bibliotecario) |
 | `PATCH` | `/api/prestamos/:id/devolver` | Devolver un préstamo (Bibliotecario) |
 | `GET` | `/api/reservas` | Consultar reservas propias o todas (Bibliotecario) |
-| `POST` | `/api/reservas` | Crear una reserva propia (Estudiante/Profesor) |
+| `POST` | `/api/reservas` | Apartar un ejemplar disponible de General o entrar en lista de espera (Estudiante/Profesor) |
 | `DELETE` | `/api/reservas/:id` | Cancelar reserva propia (o cualquier reserva como Bibliotecario) |
 | `GET` | `/api/multas` | Consultar multas propias o todas (Bibliotecario) |
 | `POST` | `/api/multas` | Registrar multa (Bibliotecario) |
@@ -226,7 +226,7 @@ Para establecer la contraseña de las cuentas semilla, define `DEMO_USER_PASSWOR
 
 ### Preparar el esquema de Supabase
 
-El backend usa PostgreSQL en Supabase. Ejecuta [`supabase/setup.sql`](./supabase/setup.sql) en el **SQL Editor** para crear las tablas, índices y datos semilla. El script puede ejecutarse de nuevo y agrega la multa semilla pendiente de Valeria. No migra datos del archivo local anterior; el cambio comienza con el inventario de demostración.
+El backend usa PostgreSQL en Supabase. Ejecuta [`supabase/setup.sql`](./supabase/setup.sql) en el **SQL Editor** para crear las tablas, índices y datos semilla. Si la base ya estaba configurada, ejecuta también [`supabase/migrations/20261112_reservas_apartados.sql`](./supabase/migrations/20261112_reservas_apartados.sql) para agregar el estado y vencimiento de los apartados sin borrar las reservas existentes. No migra datos del archivo local anterior; el cambio comienza con el catálogo semilla.
 
 Usa el **Session Pooler** de Supabase, apropiado para el backend Express persistente. Copia [`.env.example`](./.env.example) a `.env`, descarga el certificado CA desde **Database Settings → SSL Configuration** de Supabase y guárdalo como `certs/prod-ca-2021.crt`. Luego completa `DATABASE_URL`, `DEMO_USER_PASSWORD`, `JWT_SECRET` y deja `PG_CA_CERT_PATH=./certs/prod-ca-2021.crt`. El backend valida TLS y el certificado del servidor, revisa que exista el esquema y crea los hashes bcrypt de las cuentas semilla que aún no tengan contraseña. Nunca publiques ni compartas `.env`, contraseñas o claves; la URL de PostgreSQL es privada y solo se usa en el backend. No uses `anon` ni `service_role` en el frontend.
 

@@ -1,8 +1,9 @@
 const recursoRepository = require('../repositories/recursoRepository');
+const prestamoService = require('./prestamoService');
 
 class RecursoService {
     async listarRecursos() {
-        // En el futuro aquí pones reglas de negocio (ej. validar estado, permisos, etc.)
+        await prestamoService.expirarApartadosVencidos();
         return await recursoRepository.obtenerTodos();
     }
 

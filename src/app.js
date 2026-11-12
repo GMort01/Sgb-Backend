@@ -6,6 +6,7 @@ const usuarioController = require('./controllers/usuarioController');
 const multaController = require('./controllers/multaController');
 const actividadController = require('./controllers/actividadController');
 const authController = require('./controllers/authController');
+const prestamoService = require('./services/prestamoService');
 const { autenticar, permitirRoles } = require('./middleware/auth');
 const db = require('./config/database');
 
@@ -30,7 +31,7 @@ app.get('/api/usuarios', autenticar, permitirRoles('Bibliotecario'), (req, res) 
 app.post('/api/usuarios', autenticar, permitirRoles('Bibliotecario'), (req, res) => usuarioController.crear(req, res));
 app.get('/api/multas', autenticar, (req, res) => multaController.obtenerTodas(req, res));
 app.post('/api/multas', autenticar, permitirRoles('Bibliotecario'), (req, res) => multaController.crear(req, res));
-app.patch('/api/multas/:id/pagar', autenticar, permitirRoles('Bibliotecario'), (req, res) => multaController.marcarPagada(req, res));
+app.patch('/api/multas/:id/pagar', autenticar, permitirRoles('Bibliotecario', 'Estudiante', 'Profesor'), (req, res) => multaController.marcarPagada(req, res));
 app.get('/api/actividades', autenticar, (req, res) => actividadController.obtenerTodas(req, res));
 app.post('/api/actividades', autenticar, permitirRoles('Bibliotecario'), (req, res) => actividadController.crear(req, res));
 app.post('/api/actividades/:id/inscripciones', autenticar, permitirRoles('Estudiante', 'Profesor'), (req, res) => actividadController.inscribir(req, res));
@@ -38,6 +39,12 @@ app.post('/api/actividades/:id/inscripciones', autenticar, permitirRoles('Estudi
 const PORT = process.env.PORT || 3000;
 db.ready
     .then(() => {
+        app.locals.reservationExpiryTimer = setInterval(() => {
+            prestamoService.expirarApartadosVencidos().catch((error) => {
+                console.error('No se pudieron expirar los apartados vencidos:', error);
+            });
+        }, 60_000);
+        app.locals.reservationExpiryTimer.unref();
         app.locals.server = app.listen(PORT, () => {
             console.log(`Servidor ejecutándose en el puerto ${app.locals.server.address().port}`);
         });

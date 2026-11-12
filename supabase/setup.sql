@@ -66,7 +66,13 @@ CREATE TABLE IF NOT EXISTS public.reservas (
     codigo_recurso TEXT NOT NULL,
     recurso_id INTEGER REFERENCES public.recursos(id),
     fecha_reserva TEXT NOT NULL,
-    posicion INTEGER NOT NULL DEFAULT 1
+    posicion INTEGER NOT NULL DEFAULT 1,
+    estado TEXT NOT NULL DEFAULT 'Espera' CHECK (estado IN ('Espera', 'Apartada')),
+    vence_en TIMESTAMPTZ,
+    CONSTRAINT reservas_estado_vencimiento_coherentes CHECK (
+        (estado = 'Espera' AND vence_en IS NULL)
+        OR (estado = 'Apartada' AND vence_en IS NOT NULL)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS public.multas (
@@ -107,7 +113,10 @@ CREATE INDEX IF NOT EXISTS idx_prestamos_usuario_estado
 CREATE INDEX IF NOT EXISTS idx_prestamos_recurso_estado
     ON public.prestamos (recurso_id, estado);
 CREATE INDEX IF NOT EXISTS idx_reservas_recurso_posicion
-    ON public.reservas (recurso_id, posicion, fecha_reserva);
+    ON public.reservas (recurso_id, estado, posicion, fecha_reserva);
+CREATE INDEX IF NOT EXISTS idx_reservas_apartadas_vencimiento
+    ON public.reservas (vence_en)
+    WHERE estado = 'Apartada';
 CREATE INDEX IF NOT EXISTS idx_multas_usuario_estado
     ON public.multas (usuario_id, estado);
 
@@ -237,21 +246,6 @@ WHERE NOT EXISTS (
     SELECT 1 FROM public.actividades existente
     WHERE existente.titulo = actividad.titulo
 );
-
-INSERT INTO public.multas (usuario, concepto, monto, fecha, estado, usuario_id)
-SELECT
-    nombres || ' ' || apellidos,
-    'Retraso en devolución (ejemplo de demostración)',
-    2500,
-    (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE::TEXT,
-    'Pendiente',
-    id
-FROM public.usuarios
-WHERE correo = 'valeria.demo@example.test'
-  AND NOT EXISTS (
-      SELECT 1 FROM public.multas
-      WHERE usuario_id = public.usuarios.id AND estado = 'Pendiente'
-  );
 
 -- Las tablas no quedan expuestas a la API publica de Supabase sin politicas.
 -- El backend debe conectarse con credenciales privadas desde variables de entorno.

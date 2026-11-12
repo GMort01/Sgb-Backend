@@ -39,6 +39,9 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
 
     t.after(async () => {
+        if (app.locals.reservationExpiryTimer) {
+            clearInterval(app.locals.reservationExpiryTimer);
+        }
         if (app.locals.server?.listening) {
             await new Promise((resolve) => app.locals.server.close(resolve));
         }
@@ -160,6 +163,89 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     });
     assert.equal(studentLogin.status, 200);
     const studentToken = studentLogin.body.data.token;
+    const student = users.find((user) => user.correo === 'valeria.demo@example.test');
+    assert.ok(student, 'seed includes the student account used for the overdue-fine test');
+    const holdResource = assertCreated(await request(base, '/recursos', {
+        token: librarianToken,
+        method: 'POST',
+        body: { ...validResources[0], titulo: `Test pickup hold ${suffix}`, isbn: '9780000009020' },
+    }), 'pickup hold resource');
+    const holdResponse = await request(base, '/reservas', {
+        token: studentToken,
+        method: 'POST',
+        body: { recursoId: holdResource.id },
+    });
+    assert.equal(holdResponse.status, 201, holdResponse.body.message);
+    const pickupHold = holdResponse.body.data.data;
+    assert.equal(pickupHold.estado, 'Apartada');
+    assert.ok(Math.abs((Date.parse(pickupHold.venceEn) - Date.now()) / 3_600_000 - 48) < 0.1);
+    const stockAfterHold = (await request(base, '/recursos')).body.data
+        .find((resource) => resource.id === holdResource.id).ejemplares;
+    assert.equal(stockAfterHold, 4, 'pickup hold reserves exactly one physical copy');
+    const checkout = assertCreated(await request(base, '/prestamos', {
+        token: librarianToken,
+        method: 'POST',
+        body: { usuarioId: student.id, recursoId: holdResource.id },
+    }), 'pickup checkout');
+    assert.equal(checkout.tipo, 'prestamo');
+    assert.equal(checkout.data.usuarioId, student.id);
+    const stockAfterPickup = (await request(base, '/recursos')).body.data
+        .find((resource) => resource.id === holdResource.id).ejemplares;
+    assert.equal(stockAfterPickup, 4, 'checking out an already-held copy does not decrement stock twice');
+    assert.ok(!(await request(base, '/reservas', { token: studentToken })).body.data
+        .some((reservation) => reservation.id === pickupHold.id), 'the pickup hold is consumed by checkout');
+
+    const expiringResource = assertCreated(await request(base, '/recursos', {
+        token: librarianToken,
+        method: 'POST',
+        body: { ...validResources[0], titulo: `Test expiring hold ${suffix}`, isbn: '9780000009021' },
+    }), 'expiring hold resource');
+    const expiringHoldResponse = await request(base, '/reservas', {
+        token: studentToken,
+        method: 'POST',
+        body: { recursoId: expiringResource.id },
+    });
+    assert.equal(expiringHoldResponse.status, 201);
+    const expiringHold = expiringHoldResponse.body.data.data;
+    await db.query(
+        "UPDATE public.reservas SET vence_en = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = $1",
+        [expiringHold.id],
+    );
+    const catalogAfterExpiry = await request(base, '/recursos');
+    assert.equal(catalogAfterExpiry.body.data.find((resource) => resource.id === expiringResource.id).ejemplares, 5);
+    assert.ok(!(await request(base, '/reservas', { token: studentToken })).body.data
+        .some((reservation) => reservation.id === expiringHold.id), 'expired holds release the copy and are removed');
+
+    const ownFine = assertCreated(await request(base, '/multas', {
+        token: librarianToken,
+        method: 'POST',
+        body: {
+            usuarioId: student.id,
+            concepto: `Retraso de devolución ${suffix}`,
+            monto: 2500,
+            fecha: new Date().toISOString().slice(0, 10),
+        },
+    }), 'student fine');
+    assert.equal(ownFine.monto, 2500);
+    const studentFines = await request(base, '/multas', { token: studentToken });
+    assert.equal(studentFines.status, 200);
+    assert.ok(studentFines.body.data.some((fine) => fine.concepto === `Retraso de devolución ${suffix}`));
+    assert.ok(studentFines.body.data.every((fine) => fine.usuario === `${student.nombres} ${student.apellidos}`));
+    const anotherUserFine = assertCreated(await request(base, '/multas', {
+        token: librarianToken,
+        method: 'POST',
+        body: {
+            usuarioId: borrower.id,
+            concepto: `Cargo de otra cuenta ${suffix}`,
+            monto: 5000,
+            fecha: new Date().toISOString().slice(0, 10),
+        },
+    }), 'fine for another user');
+    assert.equal(anotherUserFine.monto, 5000, 'integer COP amounts are stored exactly');
+    assert.equal((await request(base, `/multas/${anotherUserFine.id}/pagar`, {
+        token: studentToken,
+        method: 'PATCH',
+    })).status, 409, 'students cannot simulate payment for another user');
     assert.equal((await request(base, '/recursos', { token: studentToken, method: 'POST', body: {} })).status, 403);
     assert.equal((await request(base, '/prestamos', { token: studentToken, method: 'POST', body: {} })).status, 403);
     assert.equal((await request(base, '/usuarios', { token: studentToken })).status, 403);
@@ -218,6 +304,37 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     });
     assert.equal(reservation.status, 201);
     assert.equal(reservation.body.data.data.posicion, 1);
+    const simulatedPayment = await request(base, `/multas/${ownFine.id}/pagar`, {
+        token: studentToken,
+        method: 'PATCH',
+    });
+    assert.equal(simulatedPayment.status, 200, simulatedPayment.body.message);
+    assert.equal(simulatedPayment.body.data.estado, 'Pagada');
+    assert.equal(simulatedPayment.body.simulatedPayment, true);
+    assert.equal((await request(base, `/multas/${ownFine.id}/pagar`, {
+        token: studentToken,
+        method: 'PATCH',
+    })).status, 409, 'paid fine cannot be paid twice');
+    const reservationAfterPayment = await request(base, '/reservas', {
+        token: studentToken,
+        method: 'POST',
+        body: { recursoId: drained.id },
+    });
+    assert.equal(reservationAfterPayment.status, 201, 'simulated payment releases circulation restrictions');
+    assert.equal(reservationAfterPayment.body.data.data.posicion, 2);
+    const firstReturnableLoan = (await request(base, '/prestamos/todos', { token: librarianToken })).body.data
+        .find((loan) => loan.recursoId === drained.id && loan.usuarioId === borrowers[1].id);
+    assert.ok(firstReturnableLoan);
+    const returnResponse = await request(base, `/prestamos/${firstReturnableLoan.id}/devolver`, {
+        token: librarianToken,
+        method: 'PATCH',
+    });
+    assert.equal(returnResponse.status, 200);
+    assert.equal(returnResponse.body.data.reservaPromovida.estado, 'Apartada');
+    assert.equal(returnResponse.body.data.reservaPromovida.usuarioId, reserver.id);
+    const reservationAfterPromotion = (await request(base, '/reservas', { token: studentToken })).body.data
+        .find((item) => item.recursoId === drained.id);
+    assert.equal(reservationAfterPromotion.posicion, 1, 'promoting the first person compacts the remaining wait-list positions');
 
     const foreignKeys = await db.query(
         `SELECT conname FROM pg_constraint

@@ -9,8 +9,8 @@ class MultaService {
         return multaRepository.crear(multa);
     }
 
-    marcarPagada(id) {
-        return multaRepository.marcarPagada(id);
+    marcarPagada(id, usuarioId) {
+        return multaRepository.marcarPagada(id, usuarioId);
     }
 }
 
