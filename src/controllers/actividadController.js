@@ -63,9 +63,9 @@ class ActividadController {
             if (error.status) {
                 const messages = {
                     ACTIVITY_NOT_FOUND: 'La actividad ya no está disponible.',
-                    USER_NOT_FOUND: 'No se encontró el usuario estudiantil.',
+                    USER_NOT_FOUND: 'No se encontró el usuario de la comunidad académica.',
                     ACTIVITY_FULL: 'La actividad ya no tiene cupos disponibles.',
-                    ALREADY_REGISTERED: 'Este estudiante ya está inscrito en la actividad.',
+                    ALREADY_REGISTERED: 'Este usuario ya está inscrito en la actividad.',
                 };
                 return res.status(error.status).json({ success: false, message: messages[error.message] || error.message });
             }

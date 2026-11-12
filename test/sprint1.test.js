@@ -164,6 +164,31 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     assert.equal((await request(base, '/prestamos', { token: studentToken, method: 'POST', body: {} })).status, 403);
     assert.equal((await request(base, '/usuarios', { token: studentToken })).status, 403);
 
+    const professor = users.find((user) => user.rol === 'Profesor');
+    assert.ok(professor, 'seed includes a professor account');
+    const professorLogin = await request(base, '/auth/login', {
+        method: 'POST',
+        body: { correo: professor.correo, password: demoPassword },
+    });
+    assert.equal(professorLogin.status, 200);
+    const activityDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const activity = assertCreated(await request(base, '/actividades', {
+        token: librarianToken,
+        method: 'POST',
+        body: {
+            titulo: `Actividad de prueba ${suffix}`,
+            descripcion: 'Actividad para validar inscripción de perfiles académicos.',
+            fecha: activityDate,
+            hora: '10:00',
+            lugar: 'Biblioteca',
+            cupos: 20,
+        },
+    }), 'activity');
+    assert.equal((await request(base, `/actividades/${activity.id}/inscripciones`, {
+        token: professorLogin.body.data.token,
+        method: 'POST',
+    })).status, 201, 'professors can enroll in academic activities');
+
     const drained = assertCreated(await request(base, '/recursos', {
         token: librarianToken,
         method: 'POST',

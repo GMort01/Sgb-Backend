@@ -33,7 +33,7 @@ app.post('/api/multas', autenticar, permitirRoles('Bibliotecario'), (req, res) =
 app.patch('/api/multas/:id/pagar', autenticar, permitirRoles('Bibliotecario'), (req, res) => multaController.marcarPagada(req, res));
 app.get('/api/actividades', autenticar, (req, res) => actividadController.obtenerTodas(req, res));
 app.post('/api/actividades', autenticar, permitirRoles('Bibliotecario'), (req, res) => actividadController.crear(req, res));
-app.post('/api/actividades/:id/inscripciones', autenticar, permitirRoles('Estudiante'), (req, res) => actividadController.inscribir(req, res));
+app.post('/api/actividades/:id/inscripciones', autenticar, permitirRoles('Estudiante', 'Profesor'), (req, res) => actividadController.inscribir(req, res));
 
 const PORT = process.env.PORT || 3000;
 db.ready

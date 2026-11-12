@@ -44,7 +44,7 @@ class ActividadRepository {
             }
 
             const usuario = await query.get(
-                "SELECT id FROM usuarios WHERE id = ? AND rol = 'Estudiante'",
+                "SELECT id FROM usuarios WHERE id = ? AND rol IN ('Estudiante', 'Profesor')",
                 [usuarioId],
             );
             if (!usuario) {
