@@ -47,6 +47,17 @@ class RecursoRepository {
         );
         return { id: result.rows[0].id, ...recurso, ejemplaresTotales: recurso.ejemplares };
     }
+
+    async actualizarEstado(id, estado) {
+        const result = await run(
+            `UPDATE recursos SET estado = ?, disponible = ?
+             WHERE id = ?
+             RETURNING id, titulo, autor, coleccion, ejemplares,
+                ejemplares_totales AS "ejemplaresTotales", estado`,
+            [estado, estado === 'Disponible', id],
+        );
+        return result.rows[0] ?? null;
+    }
 }
 
 module.exports = new RecursoRepository();

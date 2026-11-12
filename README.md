@@ -165,9 +165,11 @@ El diagrama representa los componentes y flujos implementados en este proyecto; 
 - Consultar y registrar recursos bibliográficos.
 - Consultar estudiantes y usuarios; registrar usuarios.
 - Registrar préstamos asociados al usuario y bibliotecario; el estudiante puede apartar un ejemplar disponible de Colección General durante 48 horas para recogerlo en biblioteca.
-- Renovar o devolver préstamos; una devolución de Colección General atiende a la primera persona de la lista de espera y le crea un apartado de 48 horas.
+- Renovar préstamos únicamente dentro del límite de cada colección y sin mora, multas pendientes o reservas en espera.
+- Devolver préstamos; la cola FIFO de General y tabletas Tecnoteca asigna apartados de 48 horas y omite usuarios bloqueados.
 - Consultar y cancelar apartados y reservas en lista de espera; los apartados vencidos liberan el ejemplar automáticamente.
-- Registrar multas y marcarlas como pagadas.
+- Registrar multas manuales y generar cargos diarios idempotentes por préstamos vencidos; las multas pendientes bloquean préstamos, reservas y renovaciones.
+- Cambiar los estados de recursos desde el catálogo; los flujos de circulación sincronizan disponibilidad, préstamo y apartado.
 - Publicar actividades e inscribir usuarios respetando los cupos.
 - Iniciar sesión con JWT y proteger las operaciones por rol; los préstamos y reservas se bloquean si hay multas pendientes.
 - Validar los campos y mínimos de inventario de cada colección; la Mapoteca se presta por USB en modo de lectura.
@@ -196,6 +198,7 @@ La dirección local del backend es `http://localhost:3000`.
 | `GET` | `/api/auth/me` | Consultar el perfil autenticado |
 | `GET` | `/api/recursos` | Consultar el catálogo (público) |
 | `POST` | `/api/recursos` | Registrar recursos (Bibliotecario) |
+| `PATCH` | `/api/recursos/:id/estado` | Cambiar estado de un recurso (Bibliotecario) |
 | `GET` | `/api/usuarios` | Consultar usuarios (Bibliotecario) |
 | `GET` | `/api/usuarios/estudiantes` | Consultar estudiantes (Bibliotecario) |
 | `POST` | `/api/usuarios` | Crear usuario y contraseña inicial (Bibliotecario) |
@@ -228,6 +231,8 @@ Para establecer la contraseña de las cuentas semilla, define `DEMO_USER_PASSWOR
 
 El backend usa PostgreSQL en Supabase. Ejecuta [`supabase/setup.sql`](./supabase/setup.sql) en el **SQL Editor** para crear las tablas, índices y datos semilla. Si la base ya estaba configurada, ejecuta también [`supabase/migrations/20261112_reservas_apartados.sql`](./supabase/migrations/20261112_reservas_apartados.sql) para agregar el estado y vencimiento de los apartados sin borrar las reservas existentes. No migra datos del archivo local anterior; el cambio comienza con el catálogo semilla.
 
+Para registrar multas diarias sin duplicarlas, ejecuta asimismo [`supabase/migrations/20261112_multas_mora_por_prestamo.sql`](./supabase/migrations/20261112_multas_mora_por_prestamo.sql) en bases existentes. La configuración `OVERDUE_FINE_DAILY_RATE` establece la tarifa por día en pesos COP y usa `2000` si no se define. El backend marca préstamos vencidos cada minuto y revisa las multas de mora diariamente; las multas se registran por préstamo y día para que las reejecuciones sean idempotentes.
+
 Usa el **Session Pooler** de Supabase, apropiado para el backend Express persistente. Copia [`.env.example`](./.env.example) a `.env`, descarga el certificado CA desde **Database Settings → SSL Configuration** de Supabase y guárdalo como `certs/prod-ca-2021.crt`. Luego completa `DATABASE_URL`, `DEMO_USER_PASSWORD`, `JWT_SECRET` y deja `PG_CA_CERT_PATH=./certs/prod-ca-2021.crt`. El backend valida TLS y el certificado del servidor, revisa que exista el esquema y crea los hashes bcrypt de las cuentas semilla que aún no tengan contraseña. Nunca publiques ni compartas `.env`, contraseñas o claves; la URL de PostgreSQL es privada y solo se usa en el backend. No uses `anon` ni `service_role` en el frontend.
 
 ### Despliegue del backend en Render
@@ -240,6 +245,7 @@ En Render configura estas variables:
 |---|---|
 | `DATABASE_URL` | URL nueva del **Session Pooler** de Supabase. Mantén esta credencial únicamente en Render. |
 | `DEMO_USER_PASSWORD` | Contraseña inicial larga y única; solo se aplica a cuentas semilla que aún no tengan hash. |
+| `OVERDUE_FINE_DAILY_RATE` | Tarifa entera en pesos COP por cada día de mora (por defecto `2000`). |
 | `JWT_SECRET` | Render la genera mediante el Blueprint; conserva el valor y no lo compartas. |
 | `CORS_ORIGINS` | Añádela después de crear el frontend: el origen de Vercel, por ejemplo `https://tu-proyecto.vercel.app` (sin `/` final). Se pueden separar varios orígenes con comas. |
 | `NODE_ENV` | `production`; queda configurada por el Blueprint. |
@@ -324,7 +330,7 @@ npm run dev
 
 La API quedará disponible en `http://localhost:3000`. Para consultar el catálogo, abre `http://localhost:3000/api/recursos`.
 
-La conexión a Supabase se configura en `DATABASE_URL` dentro de `.env`. No configures la URL en el frontend. Para ejecutar la prueba de aceptación contra una base aislada, define `TEST_DATABASE_URL` con una base desechable que ya tenga el esquema; nunca apuntes la prueba a producción.
+La conexión a Supabase se configura en `DATABASE_URL` dentro de `.env`. No configures la URL en el frontend. Para ejecutar las pruebas de aceptación (`sprint1.test.js` y `sprint2.test.js`) contra una base aislada, define `TEST_DATABASE_URL` con una base desechable que ya tenga aplicadas las migraciones; nunca apuntes la prueba a producción.
 
 ## Estructura del backend
 

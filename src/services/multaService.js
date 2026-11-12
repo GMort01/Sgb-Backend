@@ -1,4 +1,5 @@
 const multaRepository = require('../repositories/multaRepository');
+const { tarifaDiariaMora } = require('../config/multas');
 
 class MultaService {
     obtenerTodas(usuarioId) {
@@ -12,6 +13,11 @@ class MultaService {
     marcarPagada(id, usuarioId) {
         return multaRepository.marcarPagada(id, usuarioId);
     }
+
+    generarMultasPorMora() {
+        return multaRepository.generarMultasPorMora(tarifaDiariaMora());
+    }
+
 }
 
 module.exports = new MultaService();

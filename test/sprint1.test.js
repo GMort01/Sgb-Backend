@@ -43,6 +43,8 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
         if (app.locals.reservationExpiryTimer) {
             clearInterval(app.locals.reservationExpiryTimer);
         }
+        if (app.locals.overdueLoanTimer) clearInterval(app.locals.overdueLoanTimer);
+        if (app.locals.overdueFineTimer) clearInterval(app.locals.overdueFineTimer);
         if (app.locals.server?.listening) {
             await new Promise((resolve) => app.locals.server.close(resolve));
         }

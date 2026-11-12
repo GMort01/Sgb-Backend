@@ -15,5 +15,7 @@ services:
         sync: false
       - key: DEMO_USER_PASSWORD
         sync: false
+      - key: OVERDUE_FINE_DAILY_RATE
+        value: "2000"
       - key: JWT_SECRET
         generateValue: true

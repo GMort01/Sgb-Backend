@@ -8,7 +8,14 @@ const coleccionesValidas = new Set([
     'Mapoteca',
     'Tecnoteca',
 ]);
-const estadosValidos = new Set(['Disponible', 'Prestado', 'Reservado', 'Perdido', 'Baja']);
+const estadosValidos = new Set([
+    'Disponible',
+    'Prestado',
+    'Reservado',
+    'Perdido',
+    'Baja administrativa',
+    'Baja',
+]);
 const formatosMapoteca = new Set(['jpg', 'pdf', 'shape', 'dwg']);
 const tiposEquipo = new Set(['Laptop', 'Tableta']);
 
@@ -112,7 +119,7 @@ class RecursoController {
                 autor: autor?.trim() || undefined,
                 coleccion,
                 ejemplares: coleccion === 'Mapoteca' ? 0 : ejemplares,
-                estado,
+                estado: estado === 'Baja' ? 'Baja administrativa' : estado,
                 isbn: isbn?.trim(),
                 resumen: resumen?.trim(),
                 fechaPublicacion,
@@ -133,6 +140,25 @@ class RecursoController {
             if (error.code === '23505') {
                 return res.status(409).json({ success: false, message: 'El número de equipo ya está registrado.' });
             }
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    async actualizarEstado(req, res) {
+        const id = Number(req.params.id);
+        const estadoSolicitado = req.body?.estado;
+        if (!Number.isSafeInteger(id) || id < 1 || !estadosValidos.has(estadoSolicitado)) {
+            return res.status(400).json({ success: false, message: 'El recurso o el estado no son válidos.' });
+        }
+
+        const estado = estadoSolicitado === 'Baja' ? 'Baja administrativa' : estadoSolicitado;
+        try {
+            const recurso = await recursoService.actualizarEstado(id, estado);
+            if (!recurso) {
+                return res.status(404).json({ success: false, message: 'No se encontró el recurso seleccionado.' });
+            }
+            return res.status(200).json({ success: true, data: recurso });
+        } catch (error) {
             return res.status(500).json({ success: false, message: error.message });
         }
     }

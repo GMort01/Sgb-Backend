@@ -4,6 +4,7 @@ const recursoController = require('./controllers/recursoController');
 const prestamoController = require('./controllers/prestamoController');
 const usuarioController = require('./controllers/usuarioController');
 const multaController = require('./controllers/multaController');
+const multaService = require('./services/multaService');
 const actividadController = require('./controllers/actividadController');
 const authController = require('./controllers/authController');
 const prestamoService = require('./services/prestamoService');
@@ -37,6 +38,7 @@ app.post('/api/auth/login', (req, res) => authController.iniciarSesion(req, res)
 app.get('/api/auth/me', autenticar, (req, res) => authController.perfil(req, res));
 app.get('/api/recursos', (req, res) => recursoController.getRecursos(req, res));
 app.post('/api/recursos', autenticar, permitirRoles('Bibliotecario'), (req, res) => recursoController.crearRecurso(req, res));
+app.patch('/api/recursos/:id/estado', autenticar, permitirRoles('Bibliotecario'), (req, res) => recursoController.actualizarEstado(req, res));
 app.get('/api/prestamos', autenticar, (req, res) => prestamoController.obtenerActivos(req, res));
 app.get('/api/prestamos/todos', autenticar, (req, res) => prestamoController.obtenerTodos(req, res));
 app.post('/api/prestamos', autenticar, permitirRoles('Bibliotecario'), (req, res) => prestamoController.solicitar(req, res));
@@ -63,7 +65,25 @@ db.ready
                 console.error('No se pudieron expirar los apartados vencidos:', error);
             });
         }, 60_000);
+        app.locals.overdueLoanTimer = setInterval(() => {
+            prestamoService.marcarPrestamosVencidos().catch((error) => {
+                console.error('No se pudieron marcar los préstamos vencidos:', error);
+            });
+        }, 60_000);
+        app.locals.overdueFineTimer = setInterval(() => {
+            multaService.generarMultasPorMora().catch((error) => {
+                console.error('No se pudieron calcular las multas diarias por mora:', error);
+            });
+        }, 24 * 60 * 60 * 1000);
         app.locals.reservationExpiryTimer.unref();
+        app.locals.overdueLoanTimer.unref();
+        app.locals.overdueFineTimer.unref();
+        prestamoService.marcarPrestamosVencidos().catch((error) => {
+            console.error('No se pudieron marcar los préstamos vencidos al iniciar:', error);
+        });
+        multaService.generarMultasPorMora().catch((error) => {
+            console.error('No se pudieron calcular las multas por mora al iniciar:', error);
+        });
         app.locals.server = app.listen(PORT, () => {
             console.log(`Servidor ejecutándose en el puerto ${app.locals.server.address().port}`);
         });

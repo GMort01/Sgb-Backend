@@ -18,6 +18,10 @@ class PrestamoService {
         return prestamoRepository.expirarApartadosVencidos();
     }
 
+    marcarPrestamosVencidos() {
+        return prestamoRepository.marcarPrestamosVencidos();
+    }
+
     renovar(id, usuarioId) {
         return prestamoRepository.renovar(id, usuarioId);
     }

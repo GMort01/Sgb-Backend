@@ -76,6 +76,7 @@ class PrestamoController {
                     ALREADY_RESERVED: 'Este usuario ya está en la cola de espera para este recurso.',
                     RESOURCE_JUST_BORROWED: 'El último ejemplar acaba de ser solicitado. Inténtalo de nuevo.',
                     USER_HAS_UNPAID_FINE: 'El usuario tiene multas pendientes y no puede usar los servicios de circulación.',
+                    USER_HAS_OVERDUE_LOAN: 'El usuario tiene préstamos vencidos y no puede usar los servicios de circulación.',
                     RESERVATION_NOT_ALLOWED: 'Esta colección no admite reservas.',
                 };
                 return res.status(error.status).json({
@@ -100,6 +101,7 @@ class PrestamoController {
                 const messages = {
                     USER_NOT_FOUND: 'No se encontró el usuario de la sesión.',
                     USER_HAS_UNPAID_FINE: 'Tienes multas pendientes y no puedes usar los servicios de circulación.',
+                    USER_HAS_OVERDUE_LOAN: 'Tienes préstamos vencidos y no puedes usar los servicios de circulación.',
                     RESOURCE_NOT_AVAILABLE: 'Este recurso no está disponible.',
                     RESOURCE_JUST_BORROWED: 'El último ejemplar acaba de ser apartado. Actualiza el catálogo e inténtalo de nuevo.',
                     RESERVATION_NOT_ALLOWED: 'Solo se pueden reservar recursos de Colección General o tabletas.',
