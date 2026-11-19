@@ -17,6 +17,10 @@ El backend es una API REST desarrollada con Node.js y Express. Recibe solicitude
 
 El sistema de demostración incluye catálogo de recursos, usuarios de ejemplo, préstamos, reservas, renovaciones, devoluciones, multas y actividades con inscripción.
 
+## Entrega rápida: resultados de rendimiento
+
+Para revisar las pruebas no hace falta ejecutar código: abre [el índice de resultados de Locust](./tests/performance/index.html) y desde ahí entra a los reportes de rendimiento y estrés, con las gráficas y los datos resumidos.
+
 ## Arquitectura por capas (N-Tier)
 
 La separación por capas delimita responsabilidades, reduce el acoplamiento y facilita el mantenimiento, las pruebas y la evolución del sistema. Se basa en el patrón descrito en *Fundamentals of Software Architecture*, de Mark Richards y Neal Ford: cada capa mantiene una responsabilidad definida y se comunica con las capas adyacentes.
@@ -330,7 +334,78 @@ npm run dev
 
 La API quedará disponible en `http://localhost:3000`. Para consultar el catálogo, abre `http://localhost:3000/api/recursos`.
 
-La conexión a Supabase se configura en `DATABASE_URL` dentro de `.env`. No configures la URL en el frontend. Para ejecutar las pruebas de aceptación (`sprint1.test.js` y `sprint2.test.js`) contra una base aislada, define `TEST_DATABASE_URL` con una base desechable que ya tenga aplicadas las migraciones; nunca apuntes la prueba a producción.
+La conexión a Supabase se configura en `DATABASE_URL` dentro de `.env`. No configures la URL en el frontend.
+
+### Entorno de pruebas aislado
+
+Las pruebas de aceptación usan exclusivamente `TEST_DATABASE_URL` desde `.env.test`; no reutilices `DATABASE_URL` ni una base de producción. Crea un proyecto Supabase separado y desechable para pruebas, luego:
+
+1. En el proyecto de pruebas, abre el SQL Editor y ejecuta `supabase/setup.sql`. Si la base ya existía antes de los cambios de reservas o multas, aplica también las migraciones de `supabase/migrations/`.
+2. Copia `.env.test.example` a `.env.test` y completa `TEST_DATABASE_URL` con la URI de **Session Pooler** del proyecto de pruebas (puerto `5432`). En Supabase, el host, nombre de base y usuario están en **Connect → Session pooler**; usa la contraseña de base de datos de ese proyecto. Codifica caracteres especiales de la contraseña para URL antes de insertarla.
+3. Usa una contraseña exclusiva para las cuentas semilla de prueba en `TEST_DEMO_USER_PASSWORD`. No copies claves `anon`, `service_role` ni la contraseña de producción.
+4. Desde `sgb-backend`, ejecuta:
+
+```powershell
+npm test
+```
+
+`.env.test` está ignorado por Git. Sin `TEST_DATABASE_URL`, las pruebas de integración se omiten. Cada suite crea datos con un sufijo aleatorio y los elimina en un `teardown` transaccional, incluso si una aserción falla. Los temporizadores de vencimientos y generación de multas no se inician con `NODE_ENV=test`.
+
+Las pruebas nuevas están separadas en `tests/unit/` (10 casos de reglas de multas, préstamos, reservas y renovaciones) y `tests/integration/` (5 casos de login, catálogo, préstamos, reservas y baja administrativa). Para ejecutar solo las nuevas pruebas:
+
+```powershell
+node --test --test-concurrency=1 tests/unit/business-rules.test.js
+node --test --test-concurrency=1 tests/integration/api-endpoints.test.js
+```
+
+`npm test` ejecuta también las dos suites de aceptación existentes en `test/`.
+
+### Pruebas de rendimiento y estrés con Locust
+
+Locust carga solo el backend local en `127.0.0.1`; el servidor local apunta a `TEST_DATABASE_URL` de `.env.test`, nunca a producción. Los dos perfiles ejercitan `GET /api/recursos` (80 % de las solicitudes) y `POST /api/auth/login` (20 %):
+
+- `performance`: 30 usuarios durante 3 minutos.
+- `stress`: rampa de 10 a 150 usuarios en 2 minutos y medio. Comienza en 150; no aumentes a 200 sin confirmar primero que el proyecto de Supabase de pruebas tolera esa carga.
+
+En una terminal PowerShell, desde `sgb-backend`, instala Locust en un entorno aislado:
+
+```powershell
+py -m venv .venv-locust
+.\.venv-locust\Scripts\Activate.ps1
+python -m pip install -r tests\performance\requirements.txt
+```
+
+Inicia la API de pruebas en una terminal aparte y déjala abierta:
+
+```powershell
+node test-support\start-test-server.js
+```
+
+En otra terminal PowerShell, desde `sgb-backend`, activa el mismo entorno virtual, configura las credenciales de la cuenta semilla **de pruebas** y ejecuta primero el perfil de rendimiento:
+
+```powershell
+.\.venv-locust\Scripts\Activate.ps1
+$env:LOCUST_LOGIN_EMAIL = 'lucia.demo@example.test'
+$env:LOCUST_LOGIN_PASSWORD = node -e "require('dotenv').config({path:'.env.test'}); process.stdout.write(process.env.TEST_DEMO_USER_PASSWORD || 'Demo123!')"
+New-Item -ItemType Directory -Force tests\performance\reports | Out-Null
+$env:LOCUST_PROFILE = 'performance'
+locust -f tests\performance\locustfile.py --host http://127.0.0.1:3000 --html tests\performance\reports\performance.html
+```
+
+Abre `http://localhost:8089` y pulsa **Start** para ver las métricas en vivo. Al terminar, abre el reporte HTML guardado en `tests\performance\reports\performance.html`. Ejecuta los dos perfiles desde la misma terminal para conservar las variables de credenciales; después de revisar rendimiento, cambia `LOCUST_PROFILE` a `stress` y repite Locust, usando `stress.html` como destino del reporte. El perfil de estrés llega a 150 usuarios y termina solo a los 2:30 minutos.
+
+Para ejecutar el segundo perfil en esa terminal, después de detener el primero:
+
+```powershell
+$env:LOCUST_PROFILE = 'stress'
+locust -f tests\performance\locustfile.py --host http://127.0.0.1:3000 --html tests\performance\reports\stress.html
+```
+
+Revisa en la tabla de solicitudes el throughput (RPS), promedio, p95 y porcentaje de fallos. Anota el nivel de usuarios en que p95 o errores empeoran; el backend tiene un pool PostgreSQL limitado a 5 conexiones, así que las colas de base de datos pueden elevar la latencia antes de saturar Node. Detén el servidor con `Ctrl+C` cuando termines. No ejecutes estas pruebas contra una URL pública o de producción.
+
+En el perfil de estrés, Locust puede terminar con código distinto de cero cuando detecta respuestas HTTP fallidas: ese resultado es parte de la medición. El reporte HTML sigue siendo la fuente para revisar cuántas fallas hubo y cuándo comenzaron.
+
+El backend solo lee `DATABASE_URL` para conectarse; `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` y `DB_SSL` no están implementados. TLS y la verificación del certificado están habilitados en el pool. Esta conexión necesita el CA de Supabase en `certs/prod-ca-2021.crt`; si no tienes ese archivo o el proyecto usa otro CA, descárgalo desde la configuración SSL del proyecto de pruebas y actualiza `PG_CA_CERT_PATH`. No desactives la verificación TLS.
 
 ## Estructura del backend
 

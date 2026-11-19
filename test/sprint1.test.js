@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-require('dotenv').config();
+require('dotenv').config({ path: require('node:path').resolve(__dirname, '..', '.env.test') });
 const { test } = require('node:test');
+const { cleanupTestData } = require('../test-support/cleanup');
 
 async function request(base, route, { token, ...options } = {}) {
     const headers = { ...(options.headers || {}) };
@@ -38,20 +39,40 @@ test('Sprint 1 acceptance criteria: catalog, users, loans, seeding and access co
     const app = require('../src/app');
     const db = require('../src/config/database');
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
+    let databaseReady = false;
 
     t.after(async () => {
-        if (app.locals.reservationExpiryTimer) {
-            clearInterval(app.locals.reservationExpiryTimer);
+        try {
+            if (app.locals.reservationExpiryTimer) {
+                clearInterval(app.locals.reservationExpiryTimer);
+            }
+            if (app.locals.overdueLoanTimer) clearInterval(app.locals.overdueLoanTimer);
+            if (app.locals.overdueFineTimer) clearInterval(app.locals.overdueFineTimer);
+            if (app.locals.server?.listening) {
+                await new Promise((resolve) => app.locals.server.close(resolve));
+            }
+            if (databaseReady) {
+                await cleanupTestData(db, {
+                    userPattern: `TEST-${suffix}`,
+                    resourcePattern: `%${suffix}%`,
+                    finePattern: `%${suffix}%`,
+                    activityPattern: `%${suffix}%`,
+                });
+            }
+        } finally {
+            await db.end();
         }
-        if (app.locals.overdueLoanTimer) clearInterval(app.locals.overdueLoanTimer);
-        if (app.locals.overdueFineTimer) clearInterval(app.locals.overdueFineTimer);
-        if (app.locals.server?.listening) {
-            await new Promise((resolve) => app.locals.server.close(resolve));
-        }
-        await db.end();
     });
 
     await db.ready;
+    databaseReady = true;
+    for (const timer of [
+        app.locals.reservationExpiryTimer,
+        app.locals.overdueLoanTimer,
+        app.locals.overdueFineTimer,
+    ]) {
+        assert.equal(timer, undefined, 'background jobs are disabled in the test environment');
+    }
     for (let attempt = 0; !app.locals.server?.listening && attempt < 40; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 25));
     }

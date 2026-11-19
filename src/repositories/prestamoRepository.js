@@ -1,13 +1,9 @@
 const { all, get, transaction } = require('./transaction');
 const multaRepository = require('./multaRepository');
 const { tarifaDiariaMora } = require('../config/multas');
+const { reglasPrestamo, admiteReservas, puedeRenovarPrestamo } = require('../domain/circulacion');
 
 const estadosNoPrestables = new Set(['Perdido', 'Baja', 'Baja administrativa']);
-
-function admiteReservas(recurso) {
-    return recurso.coleccion === 'General'
-        || (recurso.coleccion === 'Tecnoteca' && recurso.tipo_equipo === 'Tableta');
-}
 
 const reservaSelect = `
     SELECT
@@ -38,28 +34,6 @@ const prestamoSelect = `
         estado
     FROM prestamos
 `;
-
-function reglasPrestamo(recurso) {
-    const coleccion = recurso.coleccion;
-    const dias = coleccion === 'General' ? 15
-        : coleccion === 'Reserva' ? 5
-            : coleccion === 'Referencia' ? 3
-                : coleccion === 'Hemeroteca' || coleccion === 'Mapoteca' ? 1
-                    : 7;
-    const fechaDevolucion = coleccion === 'Mapoteca'
-        ? "(((CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::DATE + 1) + TIME '21:00')::TEXT"
-        : `((CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota') + INTERVAL '${dias} days')::TEXT`;
-    const renovaciones = coleccion === 'General' ? 5
-        : coleccion === 'Referencia' ? 2
-            : coleccion === 'Hemeroteca' ? 1
-                : coleccion === 'Tecnoteca' ? 2 : 0;
-    return {
-        fechaDevolucion,
-        diasRenovacion: dias,
-        renovaciones,
-        medioEntrega: coleccion === 'Mapoteca' ? 'USB - solo lectura' : 'Regular',
-    };
-}
 
 async function usuarioBloqueado(query, usuarioId) {
     const multaPendiente = await query.get(
@@ -501,6 +475,7 @@ class PrestamoRepository {
             const loan = await query.get(
                 `SELECT prestamos.id, prestamos.recurso_id AS "recursoId",
                     prestamos.usuario_id AS "usuarioId",
+                    prestamos.estado,
                     prestamos.renovaciones_restantes AS "renovacionesRestantes",
                     recursos.coleccion, recursos.tipo_equipo
                  FROM prestamos JOIN recursos ON recursos.id = prestamos.recurso_id
@@ -510,14 +485,21 @@ class PrestamoRepository {
                 [id, usuarioId ?? null, usuarioId ?? null],
             );
             if (!loan) return null;
-            if (await usuarioBloqueado(query, loan.usuarioId)) return null;
+            const bloqueado = Boolean(await usuarioBloqueado(query, loan.usuarioId));
+            if (bloqueado) return null;
             const reservation = await query.get(
                 "SELECT id FROM reservas WHERE recurso_id = ? AND estado IN ('Espera', 'Apartada') LIMIT 1",
                 [loan.recursoId],
             );
             const reglas = reglasPrestamo(loan);
             const renovacionesRestantes = Math.min(loan.renovacionesRestantes, reglas.renovaciones);
-            if (reservation || renovacionesRestantes < 1 || reglas.diasRenovacion < 1) return null;
+            if (!puedeRenovarPrestamo({
+                estado: loan.estado,
+                renovacionesRestantes,
+                tieneReserva: Boolean(reservation),
+                usuarioBloqueado: bloqueado,
+                diasRenovacion: reglas.diasRenovacion,
+            })) return null;
             await query.run(
                 `UPDATE prestamos
                  SET fecha_devolucion = (fecha_devolucion::TIMESTAMP + INTERVAL '${reglas.diasRenovacion} days')::TEXT,

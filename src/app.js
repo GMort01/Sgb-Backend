@@ -60,30 +60,32 @@ app.post('/api/actividades/:id/inscripciones', autenticar, permitirRoles('Estudi
 const PORT = process.env.PORT || 3000;
 db.ready
     .then(() => {
-        app.locals.reservationExpiryTimer = setInterval(() => {
-            prestamoService.expirarApartadosVencidos().catch((error) => {
-                console.error('No se pudieron expirar los apartados vencidos:', error);
-            });
-        }, 60_000);
-        app.locals.overdueLoanTimer = setInterval(() => {
+        if (process.env.NODE_ENV !== 'test') {
+            app.locals.reservationExpiryTimer = setInterval(() => {
+                prestamoService.expirarApartadosVencidos().catch((error) => {
+                    console.error('No se pudieron expirar los apartados vencidos:', error);
+                });
+            }, 60_000);
+            app.locals.overdueLoanTimer = setInterval(() => {
+                prestamoService.marcarPrestamosVencidos().catch((error) => {
+                    console.error('No se pudieron marcar los préstamos vencidos:', error);
+                });
+            }, 60_000);
+            app.locals.overdueFineTimer = setInterval(() => {
+                multaService.generarMultasPorMora().catch((error) => {
+                    console.error('No se pudieron calcular las multas diarias por mora:', error);
+                });
+            }, 24 * 60 * 60 * 1000);
+            app.locals.reservationExpiryTimer.unref();
+            app.locals.overdueLoanTimer.unref();
+            app.locals.overdueFineTimer.unref();
             prestamoService.marcarPrestamosVencidos().catch((error) => {
-                console.error('No se pudieron marcar los préstamos vencidos:', error);
+                console.error('No se pudieron marcar los préstamos vencidos al iniciar:', error);
             });
-        }, 60_000);
-        app.locals.overdueFineTimer = setInterval(() => {
             multaService.generarMultasPorMora().catch((error) => {
-                console.error('No se pudieron calcular las multas diarias por mora:', error);
+                console.error('No se pudieron calcular las multas por mora al iniciar:', error);
             });
-        }, 24 * 60 * 60 * 1000);
-        app.locals.reservationExpiryTimer.unref();
-        app.locals.overdueLoanTimer.unref();
-        app.locals.overdueFineTimer.unref();
-        prestamoService.marcarPrestamosVencidos().catch((error) => {
-            console.error('No se pudieron marcar los préstamos vencidos al iniciar:', error);
-        });
-        multaService.generarMultasPorMora().catch((error) => {
-            console.error('No se pudieron calcular las multas por mora al iniciar:', error);
-        });
+        }
         app.locals.server = app.listen(PORT, () => {
             console.log(`Servidor ejecutándose en el puerto ${app.locals.server.address().port}`);
         });

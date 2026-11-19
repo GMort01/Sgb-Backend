@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-require('dotenv').config();
+require('dotenv').config({ path: require('node:path').resolve(__dirname, '..', '.env.test') });
 const { test } = require('node:test');
+const { cleanupTestData } = require('../test-support/cleanup');
 
 async function request(base, route, { token, ...options } = {}) {
     const headers = { ...(options.headers || {}) };
@@ -39,52 +40,28 @@ test('Sprint 2 acceptance criteria: circulation states, renewal guards, fines, j
     let databaseReady = false;
 
     t.after(async () => {
-        for (const timer of [
-            app.locals.reservationExpiryTimer,
-            app.locals.overdueLoanTimer,
-            app.locals.overdueFineTimer,
-        ]) {
-            if (timer) clearInterval(timer);
+        try {
+            for (const timer of [
+                app.locals.reservationExpiryTimer,
+                app.locals.overdueLoanTimer,
+                app.locals.overdueFineTimer,
+            ]) {
+                if (timer) clearInterval(timer);
+            }
+            if (app.locals.server?.listening) {
+                await new Promise((resolve) => app.locals.server.close(resolve));
+            }
+            if (databaseReady) {
+                await cleanupTestData(db, {
+                    userPattern: `S2-${suffix}-%`,
+                    resourcePattern: `S2 ${suffix} %`,
+                    finePattern: `%${suffix}%`,
+                    activityPattern: `%${suffix}%`,
+                });
+            }
+        } finally {
+            await db.end();
         }
-        if (app.locals.server?.listening) {
-            await new Promise((resolve) => app.locals.server.close(resolve));
-        }
-        if (databaseReady) {
-            const userPattern = `S2-${suffix}-%`;
-            const resourcePattern = `S2 ${suffix} %`;
-            await db.query(
-                `DELETE FROM public.multas
-                 WHERE usuario_id IN (
-                    SELECT id FROM public.usuarios WHERE identificacion LIKE $1
-                 ) OR prestamo_id IN (
-                    SELECT id FROM public.prestamos WHERE usuario_id IN (
-                        SELECT id FROM public.usuarios WHERE identificacion LIKE $1
-                    )
-                 )`,
-                [userPattern],
-            );
-            await db.query(
-                `DELETE FROM public.reservas
-                 WHERE usuario_id IN (
-                    SELECT id FROM public.usuarios WHERE identificacion LIKE $1
-                 ) OR recurso_id IN (
-                    SELECT id FROM public.recursos WHERE titulo LIKE $2
-                 )`,
-                [userPattern, resourcePattern],
-            );
-            await db.query(
-                `DELETE FROM public.prestamos
-                 WHERE usuario_id IN (
-                    SELECT id FROM public.usuarios WHERE identificacion LIKE $1
-                 ) OR recurso_id IN (
-                    SELECT id FROM public.recursos WHERE titulo LIKE $2
-                 )`,
-                [userPattern, resourcePattern],
-            );
-            await db.query('DELETE FROM public.recursos WHERE titulo LIKE $1', [resourcePattern]);
-            await db.query('DELETE FROM public.usuarios WHERE identificacion LIKE $1', [userPattern]);
-        }
-        await db.end();
     });
 
     await db.ready;
@@ -187,7 +164,7 @@ test('Sprint 2 acceptance criteria: circulation states, renewal guards, fines, j
             method: 'POST',
             body: { recursoId: resource.id },
         }), `reservation ${person.id}/${resource.id}`);
-        return result.data.data;
+        return result.data;
     };
 
     const resourceState = async (resourceId) => {

@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+!.env.test.example
 *.db
 data/
 certs/
+.venv-locust/
+__pycache__/
+*.py[cod]

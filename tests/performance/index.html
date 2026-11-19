@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Resultados de las pruebas de rendimiento y estrés del backend SGB con Locust.">
+    <title>Pruebas de rendimiento | SGB</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #172033;
+            --muted: #58657a;
+            --line: #dce4ef;
+            --surface: #ffffff;
+            --canvas: #f3f6fb;
+            --blue: #1456c0;
+            --blue-dark: #103c82;
+            --red: #a53131;
+            --green: #176444;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--canvas);
+            color: var(--ink);
+            font: 16px/1.6 "Segoe UI", Arial, sans-serif;
+        }
+
+        main {
+            width: min(100% - 32px, 1000px);
+            margin: 40px auto;
+        }
+
+        header {
+            padding: 36px;
+            border-radius: 20px;
+            background: linear-gradient(125deg, var(--blue-dark), #2675d8);
+            color: white;
+        }
+
+        header p { max-width: 720px; margin-bottom: 0; color: #e5efff; }
+        h1 { margin: 0; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; }
+        h2 { margin: 0 0 12px; font-size: 1.4rem; }
+        h3 { margin: 0 0 8px; font-size: 1.08rem; }
+        section { margin-top: 24px; }
+
+        .panel, .card {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: 0 5px 20px rgb(23 32 51 / 5%);
+        }
+
+        .panel { padding: 26px; }
+        .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .card { padding: 22px; }
+
+        .tag {
+            display: inline-block;
+            margin-bottom: 12px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: #eaf1ff;
+            color: var(--blue-dark);
+            font-size: .82rem;
+            font-weight: 700;
+        }
+
+        .card p, .panel p { color: var(--muted); }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin: 16px 0;
+        }
+
+        .metric {
+            padding: 12px;
+            border-radius: 12px;
+            background: #f5f8fc;
+        }
+
+        .metric strong { display: block; font-size: 1.2rem; }
+        .metric span { color: var(--muted); font-size: .84rem; }
+        .good { color: var(--green); }
+        .warning { color: var(--red); }
+
+        a.button {
+            display: inline-block;
+            padding: 10px 16px;
+            border-radius: 9px;
+            background: var(--blue);
+            color: white;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        a.button:hover, a.button:focus { background: var(--blue-dark); }
+        a:not(.button) { color: var(--blue-dark); }
+
+        .note {
+            padding: 14px 16px;
+            border-left: 4px solid #d29124;
+            border-radius: 8px;
+            background: #fff8e9;
+        }
+
+        footer { margin: 24px 0; color: var(--muted); font-size: .9rem; }
+
+        @media (max-width: 700px) {
+            main { margin: 16px auto; }
+            header, .panel, .card { padding: 20px; }
+            .cards { grid-template-columns: 1fr; }
+            .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Pruebas de rendimiento y estrés</h1>
+        <p>Sistema de Gestión Bibliotecaria (SGB) · Backend Node.js/Express · Informe generado con Locust</p>
+        <p>Ambas pruebas se ejecutaron contra el backend local, conectado al proyecto Supabase de pruebas; no se usó producción.</p>
+    </header>
+
+    <section class="panel" aria-labelledby="how-to">
+        <h2 id="how-to">Cómo revisar esta entrega</h2>
+        <ol>
+            <li>Abre el reporte de <strong>rendimiento</strong> para ver los resultados con carga habitual.</li>
+            <li>Abre el reporte de <strong>estrés</strong> para ver cómo cambian la latencia y los errores con más usuarios.</li>
+            <li>En cada reporte, baja hasta <strong>Charts</strong> para ver las gráficas y consulta las tablas superiores para los valores exactos.</li>
+        </ol>
+        <p>Los enlaces abren archivos HTML guardados junto a esta página. No es necesario instalar Locust ni iniciar un servidor para ver los resultados.</p>
+    </section>
+
+    <section class="cards" aria-label="Reportes de pruebas">
+        <article class="card">
+            <span class="tag">Carga habitual · 3 minutos</span>
+            <h2>Prueba de rendimiento</h2>
+            <p>30 usuarios concurrentes. Se ejercitaron el catálogo y el inicio de sesión.</p>
+            <div class="metrics">
+                <div class="metric"><strong>1.470</strong><span>solicitudes</span></div>
+                <div class="metric"><strong>8,15</strong><span>solicitudes/s</span></div>
+                <div class="metric"><strong>2,12 s</strong><span>tiempo promedio</span></div>
+                <div class="metric"><strong>2,8 s</strong><span>latencia p95</span></div>
+                <div class="metric"><strong class="good">0 %</strong><span>solicitudes fallidas</span></div>
+            </div>
+            <a class="button" href="reports/performance.html">Abrir reporte de rendimiento</a>
+        </article>
+
+        <article class="card">
+            <span class="tag">Carga creciente · 2 min 30 s</span>
+            <h2>Prueba de estrés</h2>
+            <p>Rampa progresiva de 10 a 150 usuarios concurrentes, sobre los mismos endpoints.</p>
+            <div class="metrics">
+                <div class="metric"><strong>1.092</strong><span>solicitudes</span></div>
+                <div class="metric"><strong>7,24</strong><span>solicitudes/s</span></div>
+                <div class="metric"><strong>8,45 s</strong><span>tiempo promedio</span></div>
+                <div class="metric"><strong>18 s</strong><span>latencia p95</span></div>
+                <div class="metric"><strong class="warning">3,1 %</strong><span>respuestas HTTP 500</span></div>
+            </div>
+            <a class="button" href="reports/stress.html">Abrir reporte de estrés</a>
+        </article>
+    </section>
+
+    <section class="panel" aria-labelledby="conclusion">
+        <h2 id="conclusion">Lectura principal</h2>
+        <p>En la prueba de estrés, la latencia p95 aumentó de forma marcada desde aproximadamente 50 usuarios: cerca de 5,3 s a 50 y 13 s a 100. A 150 usuarios se observaron respuestas HTTP 500. Los datos muestran degradación bajo la carga probada; no identifican por sí solos si la causa fue Node.js, PostgreSQL, el pool de conexiones o el entorno de ejecución.</p>
+        <p class="note"><strong>Conclusión:</strong> estos resultados corresponden a una prueba académica en un entorno local y de pruebas. No representan una medición de capacidad de producción. Para atribuir la causa de los HTTP 500 habría que contrastar estos datos con los logs de la API y las métricas de Supabase durante otra ejecución.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="data">
+        <h2 id="data">Datos descargables</h2>
+        <p>Los CSV contienen estadísticas agregadas e históricas para verificar o reutilizar las mediciones:</p>
+        <ul>
+            <li><a href="reports/performance_stats.csv">Estadísticas de rendimiento (CSV)</a> · <a href="reports/performance_stats_history.csv">historial por segundo</a></li>
+            <li><a href="reports/stress_stats.csv">Estadísticas de estrés (CSV)</a> · <a href="reports/stress_stats_history.csv">historial por segundo</a></li>
+        </ul>
+    </section>
+
+    <footer>Proyecto académico SGB · Informes de Locust · Destino de pruebas: 127.0.0.1:3000</footer>
+</main>
+</body>
+</html>

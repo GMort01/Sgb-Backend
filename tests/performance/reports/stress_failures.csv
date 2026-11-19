@@ -1,0 +1,3 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+GET,GET /api/recursos,CatchResponseError('HTTP 500'),24,2026-11-19T09:08:21Z,2026-11-19T09:08:40Z
+POST,POST /api/auth/login,CatchResponseError('HTTP 500'),10,2026-11-19T09:08:21Z,2026-11-19T09:08:39Z
